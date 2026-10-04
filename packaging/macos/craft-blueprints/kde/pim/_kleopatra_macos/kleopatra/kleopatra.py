@@ -41,8 +41,6 @@ class subinfo(info.infoclass):
         self.runtimeDependencies["kde/pim/mimetreeparser"] = None
         self.buildDependencies["libs/assuan2"] = None
         self.runtimeDependencies["kde/plasma/breeze"] = None
-        # mimetreeparser needs KIO, but its blueprint doesn't list it yet
-        self.runtimeDependencies["kde/frameworks/tier3/kio"] = None
 
 
 class Package(CMakePackageBase):

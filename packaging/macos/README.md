@@ -41,6 +41,8 @@ craft-blueprints-kde on macOS:
   relocated with `gpgconf.ctl` when it is bundled in the app bundle
 - libgcrypt and libassuan versions required by GnuPG 2.5
 - pinentry-qt, which is bundled for asking for passphrases
+- mimetreeparser, whose development branch also needs KIO and KService, which the
+  blueprint of craft-blueprints-kde doesn't list yet
 - Kleopatra itself, with lists of files to leave out of the app bundle
   (`blacklist_macos.txt`) and exceptions (`whitelist_macos.txt`). Craft puts all files
   of all dependencies into the bundle by default, including Python, multimedia and QML
