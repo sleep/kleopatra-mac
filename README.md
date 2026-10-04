@@ -27,13 +27,23 @@ Everything else is upstream Kleopatra. The app uses the macOS menu bar.
 
 ## Installing
 
-There are no prebuilt downloads yet. Build the disk image yourself as described in
-[packaging/macos/README.md](packaging/macos/README.md), open it and drag Kleopatra to
-your Applications folder.
+Download the disk image for your Mac from the [releases](../../releases): arm64 for
+Apple silicon, x86_64 for Intel. Open it and drag Kleopatra to your Applications
+folder. You can also build it yourself as described in
+[packaging/macos/README.md](packaging/macos/README.md).
 
 The app isn't signed or notarized yet, so macOS blocks it on the first start. To open
-it anyway, Control-click the app, choose Open and confirm, or allow it in System
-Settings > Privacy & Security.
+it anyway:
+
+1. Open Kleopatra once and close the warning.
+2. In System Settings > Privacy & Security, click Open Anyway next to the message
+   about Kleopatra, and confirm.
+
+Alternatively, remove the quarantine flag in Terminal:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/kleopatra.app
+```
 
 ## Building
 
