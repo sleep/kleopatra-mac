@@ -44,7 +44,6 @@ the GnuPG libraries.
 ## Known limitations
 
 - The app isn't code signed or notarized.
-- The disk image (about 140 MB) also contains build tools that the app doesn't need.
 - Smartcards, keyserver lookups and running next to a gpg-agent from another GnuPG
   installation haven't been tested much yet.
 - There's no Finder integration, such as context menu entries for encrypting files.
