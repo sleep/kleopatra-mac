@@ -19,7 +19,9 @@ and the macOS work lives on the `feat/macos` branch.
   merged into the title bar, SF Symbols icons, the search field and category filter
   in the toolbar, Finder-like lists, a Settings window with a toolbar, and no icons
   in menus and on text buttons. You can switch to KDE's Breeze style, which Kleopatra
-  uses on Linux and Windows, in Settings > Application Style.
+  uses on Linux and Windows, in Settings > Application Style. The native style follows
+  the appearance of the system; color schemes (Settings > Color Scheme) are offered
+  for the other styles.
 - **macOS app icon:** the Kleopatra artwork on the rounded macOS icon tile, and proper
   bundle metadata (name, identifier `org.kde.kleopatra`, version).
 - **Notepad in the main window:** an optional setting (Kleopatra menu > Settings >

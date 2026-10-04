@@ -47,6 +47,9 @@
 #include <KColorScheme>
 #include <KColorSchemeManager>
 #include <KColorSchemeMenu>
+#ifdef Q_OS_MACOS
+#include <KColorSchemeModel>
+#endif
 #include <KConfigDialog>
 #include <KConfigGroup>
 #include <KEditToolBar>
@@ -78,6 +81,7 @@
 #include <QSettings>
 #include <QStackedWidget>
 #include <QStatusBar>
+#include <QStyleHints>
 #include <QTimer>
 #include <QVBoxLayout>
 #include <QWidgetAction>
@@ -618,6 +622,59 @@ public:
         updatingSearchBarPlacement = false;
     }
 
+    // Makes the color scheme and the appearance of the application fit the widget style
+    void updateColorScheme()
+    {
+        if (updatingColorScheme) {
+            return;
+        }
+        updatingColorScheme = true;
+        auto manager = KColorSchemeManager::instance();
+        // The native style follows the appearance of the system. A color scheme would only change
+        // the colors of some parts of the user interface. Therefore, color schemes are only
+        // offered for other styles. The color scheme chosen for other styles is kept in the
+        // configuration, so that it's used again when the user switches back to another style.
+        const bool nativeStyle = Kleo::MacOS::isNativeStyleActive();
+        colorSchemeMenu->menuAction()->setVisible(!nativeStyle);
+        QString schemeId;
+        if (!nativeStyle) {
+            schemeId = KConfigGroup(KSharedConfig::openConfig(), u"UiSettings"_s).readEntry("ColorScheme", QString{});
+            if (!manager->indexForSchemeId(schemeId).isValid()) {
+                schemeId.clear();
+            }
+        }
+        manager->setAutosaveChanges(false);
+        if (schemeId.isEmpty()) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+            qApp->styleHints()->unsetColorScheme();
+#endif
+            // KColorSchemeManager uses the default palette instead of the color scheme matching
+            // the appearance of the system if a color scheme has been activated before
+            qApp->setProperty("KDE_COLOR_SCHEME_PATH", QVariant{});
+            manager->activateSchemeId(QString{});
+        } else {
+            if (manager->activeSchemeId() != schemeId) {
+                manager->activateSchemeId(schemeId);
+            }
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+            // make the parts of the user interface that are drawn by the system, e.g. the title
+            // bar, match the color scheme
+            const bool isDark = qApp->palette().color(QPalette::Window).lightness() < 128;
+            qApp->styleHints()->setColorScheme(isDark ? Qt::ColorScheme::Dark : Qt::ColorScheme::Light);
+#endif
+        }
+        manager->setAutosaveChanges(true);
+        // make sure that the active color scheme is checked in the menu
+        const QString schemePath = manager->indexForSchemeId(manager->activeSchemeId()).data(KColorSchemeModel::PathRole).toString();
+        const auto schemeActions = colorSchemeMenu->actions();
+        for (auto action : schemeActions) {
+            if (action->data().toString() == schemePath) {
+                action->setChecked(true);
+            }
+        }
+        updatingColorScheme = false;
+    }
+
     void setUpMacOSToolBar()
     {
         q->setUnifiedTitleAndToolBarOnMac(true);
@@ -685,6 +742,8 @@ private:
 #ifdef Q_OS_MACOS
     SearchFieldAction *searchFieldAction = nullptr;
     bool updatingSearchBarPlacement = false;
+    QMenu *colorSchemeMenu = nullptr;
+    bool updatingColorScheme = false;
 #endif
 };
 
@@ -989,6 +1048,22 @@ void MainWindow::Private::setupActions()
     KActionMenu *schemeMenu = KColorSchemeMenu::createMenu(manager, q);
     coll->addAction(QStringLiteral("colorscheme_menu"), schemeMenu->menu()->menuAction());
 #ifdef Q_OS_MACOS
+    colorSchemeMenu = schemeMenu->menu();
+    updateColorScheme();
+    connect(KleopatraApplication::instance(), &KleopatraApplication::widgetStyleChanged, q, [this]() {
+        updateColorScheme();
+    });
+    // the following connections are made after KColorSchemeManager and KColorSchemeMenu made
+    // theirs, so that the color scheme is updated after they have reacted
+    connect(qApp->styleHints(), &QStyleHints::colorSchemeChanged, q, [this]() {
+        updateColorScheme();
+    });
+    const auto schemeActions = colorSchemeMenu->actions();
+    if (auto group = schemeActions.empty() ? nullptr : schemeActions.front()->actionGroup()) {
+        connect(group, &QActionGroup::triggered, q, [this]() {
+            updateColorScheme();
+        });
+    }
     coll->addAction(u"configure_style"_s, KleopatraApplication::instance()->createConfigureStyleAction(q));
     // the toolbar item of the search field can't be triggered
     KActionCollection::setShortcutsConfigurable(coll->addAction(u"search_field"_s, createSearchFieldAction()), false);

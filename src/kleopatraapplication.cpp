@@ -518,6 +518,8 @@ void KleopatraApplication::applyWidgetStyle()
             }
         }
     }
+
+    Q_EMIT widgetStyleChanged();
 }
 
 QAction *KleopatraApplication::createConfigureStyleAction(QObject *parent)

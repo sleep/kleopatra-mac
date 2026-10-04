@@ -123,6 +123,10 @@ public Q_SLOTS:
 Q_SIGNALS:
     void configurationChanged();
     void distributionDataChanged();
+#ifdef Q_OS_MACOS
+    // Emitted after the widget style was applied
+    void widgetStyleChanged();
+#endif
 
 private Q_SLOTS:
 #ifdef Q_OS_MACOS
