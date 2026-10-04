@@ -66,6 +66,7 @@
 #include <QAbstractItemView>
 #include <QActionGroup>
 #include <QCloseEvent>
+#include <QComboBox>
 #include <QDesktopServices>
 #include <QDir>
 #include <QHeaderView>
@@ -79,6 +80,11 @@
 #include <QStatusBar>
 #include <QTimer>
 #include <QVBoxLayout>
+#include <QWidgetAction>
+
+#ifdef Q_OS_MACOS
+#include "macos/macosstyle.h"
+#endif
 
 #include <Libkleo/Classify>
 #include <Libkleo/Compliance>
@@ -402,6 +408,51 @@ public:
         updateViewActions();
     }
 
+#ifdef Q_OS_MACOS
+    // Moves the search field of the certificate view into the toolbar, like the search fields
+    // of macOS applications
+    QWidgetAction *createSearchFieldAction()
+    {
+        auto searchBar = ui.searchTab->searchBar();
+        auto lineEdit = searchBar->lineEdit();
+        lineEdit->addAction(Kleo::MacOS::symbolIcon(u"magnifyingglass"_s), QLineEdit::LeadingPosition);
+        lineEdit->setMinimumWidth(160);
+        lineEdit->setMaximumWidth(260);
+        // the category filter adapts to the shortest category names, so that it fits
+        if (auto combo = searchBar->findChild<QComboBox *>()) {
+            combo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+            combo->setMinimumContentsLength(10);
+        }
+
+        // the stretch moves the category filter and the search field to the right end of
+        // the toolbar; the search bar keeps the category filter
+        auto container = new QWidget;
+        auto layout = new QHBoxLayout{container};
+        layout->setContentsMargins({});
+        layout->addStretch(1);
+        layout->addWidget(searchBar);
+        layout->addWidget(lineEdit);
+        container->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+
+        auto action = new QWidgetAction{q};
+        action->setText(i18nc("@action:intoolbar", "Search"));
+        action->setDefaultWidget(container);
+        return action;
+    }
+
+    void setUpMacOSToolBar()
+    {
+        q->setUnifiedTitleAndToolBarOnMac(true);
+        if (auto toolBar = q->toolBar(u"mainToolBar"_s)) {
+            toolBar->setMovable(false);
+            const auto actions = toolBar->actions();
+            for (auto action : actions) {
+                action->setIcon(Kleo::MacOS::symbolIconFor(action->icon()));
+            }
+        }
+    }
+#endif
+
     void restartDaemons()
     {
         Kleo::restartGpgAgent();
@@ -521,6 +572,10 @@ MainWindow::Private::Private(MainWindow *qq)
         qCDebug(KLEOPATRA_LOG) << "Hook into the help menu to show the About dialog ourselves";
         connect(helpMenu, &KHelpMenu::showAboutApplication, KleopatraApplication::instance(), &KleopatraApplication::showAboutDialog);
     }
+
+#ifdef Q_OS_MACOS
+    setUpMacOSToolBar();
+#endif
 
     // make toolbar buttons accessible by keyboard
     auto toolbar = q->findChild<KToolBar *>();
@@ -745,6 +800,7 @@ void MainWindow::Private::setupActions()
     coll->addAction(QStringLiteral("colorscheme_menu"), schemeMenu->menu()->menuAction());
 #ifdef Q_OS_MACOS
     coll->addAction(u"configure_style"_s, KleopatraApplication::instance()->createConfigureStyleAction(q));
+    coll->addAction(u"search_field"_s, createSearchFieldAction());
 #endif
 
     focusToClickSearchAction = new QAction(i18nc("@action", "Set Focus to Quick Search"), q);

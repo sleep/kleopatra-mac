@@ -27,6 +27,11 @@ if(WIN32)
 else()
   set(_kleopatra_extra_uiserver_SRCS uiserver/uiserver_unix.cpp)
   set(_kleopatra_extra_SRCS)
+  if(APPLE)
+    enable_language(OBJCXX)
+    set(_kleopatra_extra_SRCS macos/macosstyle.mm macos/macosstyle.h)
+    set_source_files_properties(macos/macosstyle.mm PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
+  endif()
 endif()
 
 set(_kleopatra_uiserver_SRCS
@@ -604,6 +609,8 @@ endif()
 set(_kleopatra_platform_libs)
 if (WIN32)
   set(_kleopatra_platform_libs "secur32")
+elseif (APPLE)
+  set(_kleopatra_platform_libs "-framework AppKit")
 endif ()
 
 target_link_libraries(kleopatra_bin

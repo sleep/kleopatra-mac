@@ -202,7 +202,13 @@ SearchBar::~SearchBar()
 
 void SearchBar::updateClickMessage(const QString &shortcutStr)
 {
+#ifdef Q_OS_MACOS
+    // search fields on macOS show a short placeholder; the shortcut is mentioned in the tooltip
+    d->lineEdit->setPlaceholderText(i18nc("@info:placeholder", "Search"));
+    d->lineEdit->setToolTip(i18nc("@info:tooltip", "Show only certificates that match the entered search term (%1).", shortcutStr));
+#else
     d->lineEdit->setPlaceholderText(i18nc("@info:placeholder", "Enter search term <%1>", shortcutStr));
+#endif
 }
 
 // slot
