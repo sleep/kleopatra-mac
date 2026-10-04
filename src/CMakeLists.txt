@@ -655,3 +655,26 @@ install(
 )
 
 install(FILES kleopatradebugcommandsrc DESTINATION ${KDE_INSTALL_CONFDIR})
+if (APPLE)
+    # On macOS, KConfig looks for config files only in the preferences folder of the user,
+    # so that the files with the default settings installed in KDE_INSTALL_CONFDIR are never
+    # found, in particular not in an app bundle. Therefore, they are compiled into the
+    # executable as resources below :/kconfig, where KConfig looks for defaults as well.
+    set(_default_config_files "${CMAKE_CURRENT_SOURCE_DIR}/kleopatradebugcommandsrc")
+    # libkleopatrarc is installed by Libkleo
+    get_filename_component(_libkleo_prefix "${KPim6Libkleo_DIR}/../../.." ABSOLUTE)
+    find_file(LIBKLEOPATRARC_FILE libkleopatrarc
+        PATHS "${_libkleo_prefix}/etc/xdg" "${KDE_INSTALL_FULL_CONFDIR}"
+        NO_DEFAULT_PATH
+    )
+    if (LIBKLEOPATRARC_FILE)
+        list(APPEND _default_config_files "${LIBKLEOPATRARC_FILE}")
+    else()
+        message(WARNING "libkleopatrarc of Libkleo not found. Kleopatra will lack the default archive, checksum and key filter definitions.")
+    endif()
+    foreach(_file ${_default_config_files})
+        get_filename_component(_name "${_file}" NAME)
+        set_source_files_properties("${_file}" PROPERTIES QT_RESOURCE_ALIAS "${_name}")
+    endforeach()
+    qt_add_resources(kleopatra_bin "macos_default_config" PREFIX "/kconfig" FILES ${_default_config_files})
+endif()
