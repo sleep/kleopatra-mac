@@ -159,7 +159,16 @@ public:
         mCryptBtn->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Maximum);
 
         auto btnLay = new QHBoxLayout;
-        btnLay->setSpacing(q->style()->pixelMetric(QStyle::PM_LayoutHorizontalSpacing));
+        int buttonSpacing = q->style()->pixelMetric(QStyle::PM_LayoutHorizontalSpacing, nullptr, q);
+        if (buttonSpacing < 0) {
+            // some styles, e.g. the macOS style, have no uniform spacing; ask for the spacing
+            // between push buttons instead of inheriting the spacing 0 of the surrounding layout
+            buttonSpacing = q->style()->layoutSpacing(QSizePolicy::PushButton, QSizePolicy::PushButton, Qt::Horizontal, nullptr, q);
+        }
+        if (buttonSpacing < 0) {
+            buttonSpacing = 8;
+        }
+        btnLay->setSpacing(buttonSpacing);
         btnLay->setContentsMargins(q->style()->pixelMetric(QStyle::PM_LayoutLeftMargin),
                                    q->style()->pixelMetric(QStyle::PM_LayoutTopMargin),
                                    q->style()->pixelMetric(QStyle::PM_LayoutRightMargin),
