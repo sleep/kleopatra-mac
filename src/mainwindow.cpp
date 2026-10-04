@@ -66,7 +66,6 @@
 #include <QAbstractItemView>
 #include <QActionGroup>
 #include <QCloseEvent>
-#include <QComboBox>
 #include <QDesktopServices>
 #include <QDir>
 #include <QHeaderView>
@@ -74,6 +73,7 @@
 #include <QMenu>
 #include <QMimeData>
 #include <QPixmap>
+#include <QPointer>
 #include <QProcess>
 #include <QSettings>
 #include <QStackedWidget>
@@ -158,6 +158,17 @@ public:
         }
     }
 
+#ifdef Q_OS_MACOS
+    // Puts the search bar back above the certificate list after it was shown in the toolbar
+    void takeBackSearchBar()
+    {
+        ui.searchBar->setCompactLayout(false);
+        static_cast<QVBoxLayout *>(layout())->insertWidget(0, ui.searchBar);
+        ui.searchBar->setTabOrderAfter(this);
+        ui.searchBar->show();
+    }
+#endif
+
 private:
     struct UI {
         TabWidget *tabWidget = nullptr;
@@ -177,6 +188,125 @@ private:
     } ui;
 };
 
+#ifdef Q_OS_MACOS
+// The toolbar item of the search field. It shows the search bar of the certificate view
+// as long as there is room for it in the toolbar. The search bar is only a guest: it's
+// handed back to the certificate view before the item is destroyed with its toolbar.
+class SearchFieldHost : public QWidget
+{
+    Q_OBJECT
+public:
+    explicit SearchFieldHost(CertificateView *view, QWidget *parent = nullptr)
+        : QWidget{parent}
+        , view{view}
+    {
+        auto layout = new QHBoxLayout{this};
+        layout->setContentsMargins({});
+        // keeps the search field and its focus ring off the edge of the window
+        layout->addSpacing(8);
+        setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    }
+
+    ~SearchFieldHost() override
+    {
+        if (hasSearchBar()) {
+            view->takeBackSearchBar();
+        }
+    }
+
+    bool hasSearchBar() const
+    {
+        return view && view->searchBar()->parentWidget() == this;
+    }
+
+    void takeSearchBar()
+    {
+        auto searchBar = view->searchBar();
+        setMinimumWidth(0);
+        searchBar->setCompactLayout(true);
+        static_cast<QHBoxLayout *>(layout())->insertWidget(0, searchBar);
+        searchBar->setTabOrderAfter(this);
+        searchBar->show();
+    }
+
+    // Keeps requesting the space for the search bar after it left. This way the toolbar
+    // shows the item again only if the search bar fits.
+    void reserveSpace()
+    {
+        setMinimumWidth(minimumSizeHint().width());
+    }
+
+Q_SIGNALS:
+    void visibilityChanged();
+
+protected:
+    bool event(QEvent *e) override
+    {
+        switch (e->type()) {
+        case QEvent::ShowToParent:
+            // KXMLGUI makes all toolbar items focusable, but only the widgets of the search
+            // bar shall get the keyboard focus
+            setFocusPolicy(Qt::NoFocus);
+            [[fallthrough]];
+        case QEvent::Show:
+        case QEvent::Hide:
+        case QEvent::HideToParent:
+            Q_EMIT visibilityChanged();
+            break;
+        default:
+            break;
+        }
+        return QWidget::event(e);
+    }
+
+private:
+    const QPointer<CertificateView> view;
+};
+
+class SearchFieldAction : public QWidgetAction
+{
+    Q_OBJECT
+public:
+    explicit SearchFieldAction(CertificateView *view, QObject *parent = nullptr)
+        : QWidgetAction{parent}
+        , view{view}
+    {
+    }
+
+    // Returns the toolbar item in \p window that can show the search bar, i.e. an item that
+    // is neither hidden with its toolbar nor hidden because it doesn't fit in the toolbar
+    SearchFieldHost *usableHost(const QWidget *window) const
+    {
+        const auto hosts = createdWidgets();
+        for (auto host : hosts) {
+            if (window->isAncestorOf(host) && host->isVisibleTo(window)) {
+                return static_cast<SearchFieldHost *>(host);
+            }
+        }
+        return nullptr;
+    }
+
+Q_SIGNALS:
+    void hostsChanged();
+
+protected:
+    QWidget *createWidget(QWidget *parent) override
+    {
+        // there is only one search bar; it isn't shown in menus like the menu of the
+        // toolbar extension
+        if (!qobject_cast<QToolBar *>(parent)) {
+            return nullptr;
+        }
+        auto host = new SearchFieldHost{view, parent};
+        host->setEnabled(isEnabled());
+        connect(host, &SearchFieldHost::visibilityChanged, this, &SearchFieldAction::hostsChanged);
+        return host;
+    }
+
+private:
+    CertificateView *const view;
+};
+#endif
 }
 
 class MainWindow::Private
@@ -242,6 +372,11 @@ public:
     {
         KEditToolBar dlg(q->factory());
         dlg.exec();
+#ifdef Q_OS_MACOS
+        // the toolbar may have been rebuilt
+        setUpMacOSToolBar();
+        updateSearchBarPlacement();
+#endif
     }
     void editKeybindings()
     {
@@ -347,6 +482,9 @@ public:
             // there's nothing to search
             return;
         }
+#ifdef Q_OS_MACOS
+        updateSearchBarPlacement();
+#endif
         ui.searchTab->searchBar()->lineEdit()->setFocus();
     }
 
@@ -427,35 +565,57 @@ public:
     }
 
 #ifdef Q_OS_MACOS
-    // Moves the search field of the certificate view into the toolbar, like the search fields
-    // of macOS applications
+    // Creates the toolbar item for the search field, so that the search bar of the
+    // certificate view can be shown in the toolbar like the search fields of macOS applications
     QWidgetAction *createSearchFieldAction()
     {
-        auto searchBar = ui.searchTab->searchBar();
-        auto lineEdit = searchBar->lineEdit();
-        lineEdit->addAction(Kleo::MacOS::symbolIcon(u"magnifyingglass"_s), QLineEdit::LeadingPosition);
-        lineEdit->setMinimumWidth(160);
-        lineEdit->setMaximumWidth(260);
-        // the category filter adapts to the shortest category names, so that it fits
-        if (auto combo = searchBar->findChild<QComboBox *>()) {
-            combo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
-            combo->setMinimumContentsLength(10);
+        ui.searchTab->searchBar()->lineEdit()->addAction(Kleo::MacOS::symbolIcon(u"magnifyingglass"_s), QLineEdit::LeadingPosition);
+
+        searchFieldAction = new SearchFieldAction{ui.searchTab, q};
+        searchFieldAction->setText(i18nc("@action:intoolbar", "Search"));
+        // moving the search bar changes the layout of the toolbar; therefore, this isn't done
+        // while the toolbar is busy showing or hiding its items
+        connect(
+            searchFieldAction,
+            &SearchFieldAction::hostsChanged,
+            q,
+            [this]() {
+                updateSearchBarPlacement();
+            },
+            Qt::QueuedConnection);
+        return searchFieldAction;
+    }
+
+    // Shows the search bar in the toolbar if its toolbar item is visible. Otherwise, e.g. if
+    // the toolbar is hidden, if the item doesn't fit in the toolbar, or if it was removed from
+    // the toolbar, the search bar is shown above the certificate list.
+    void updateSearchBarPlacement()
+    {
+        if (updatingSearchBarPlacement) {
+            return;
         }
-
-        // the stretch moves the category filter and the search field to the right end of
-        // the toolbar; the search bar keeps the category filter
-        auto container = new QWidget;
-        auto layout = new QHBoxLayout{container};
-        layout->setContentsMargins({});
-        layout->addStretch(1);
-        layout->addWidget(searchBar);
-        layout->addWidget(lineEdit);
-        container->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-
-        auto action = new QWidgetAction{q};
-        action->setText(i18nc("@action:intoolbar", "Search"));
-        action->setDefaultWidget(container);
-        return action;
+        auto searchBar = ui.searchTab->searchBar();
+        const auto host = searchFieldAction->usableHost(q);
+        const auto currentParent = searchBar->parentWidget();
+        if (currentParent == (host ? static_cast<QWidget *>(host) : ui.searchTab)) {
+            return;
+        }
+        updatingSearchBarPlacement = true;
+        // reparenting takes the focus away
+        const QPointer<QWidget> focusWidget = q->focusWidget();
+        const bool restoreFocus = focusWidget && searchBar->isAncestorOf(focusWidget);
+        if (auto oldHost = qobject_cast<SearchFieldHost *>(currentParent)) {
+            oldHost->reserveSpace();
+        }
+        if (host) {
+            host->takeSearchBar();
+        } else {
+            ui.searchTab->takeBackSearchBar();
+        }
+        if (restoreFocus && focusWidget) {
+            focusWidget->setFocus();
+        }
+        updatingSearchBarPlacement = false;
     }
 
     void setUpMacOSToolBar()
@@ -522,6 +682,10 @@ private:
     } ui;
     QAction *focusToClickSearchAction = nullptr;
     ClipboardMenu *clipboadMenu = nullptr;
+#ifdef Q_OS_MACOS
+    SearchFieldAction *searchFieldAction = nullptr;
+    bool updatingSearchBarPlacement = false;
+#endif
 };
 
 MainWindow::Private::UI::UI(MainWindow *q)
@@ -618,7 +782,15 @@ MainWindow::Private::Private(MainWindow *qq)
     q->setAcceptDrops(true);
 
     // set default window size
+#ifdef Q_OS_MACOS
+    // start with the search bar in the toolbar, so that the default size has room for it
+    if (auto host = q->findChild<SearchFieldHost *>()) {
+        host->takeSearchBar();
+    }
+    q->resize(QSize(qMax(1024, q->sizeHint().width()), 500));
+#else
     q->resize(QSize(1024, 500));
+#endif
     q->setAutoSaveSettings();
 
     updateSearchBarClickMessage();
@@ -1019,6 +1191,9 @@ bool MainWindow::queryClose()
 void MainWindow::showEvent(QShowEvent *e)
 {
     KXmlGuiWindow::showEvent(e);
+#ifdef Q_OS_MACOS
+    d->updateSearchBarPlacement();
+#endif
     if (d->firstShow) {
         d->ui.searchTab->tabWidget()->loadViews(KSharedConfig::openStateConfig(), QStringLiteral("KeyList"));
         d->firstShow = false;
