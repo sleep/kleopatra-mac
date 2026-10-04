@@ -43,6 +43,7 @@
 
 #ifdef Q_OS_MACOS
 #include "macos/macosstyle.h"
+#include "utils/gui-helper.h"
 #endif
 
 using namespace Kleo::Config;
@@ -91,20 +92,15 @@ void KleoPageConfigDialog::addToolBarToLayout()
     dialogLayout->insertWidget(0, mToolBar);
     updateToolBarWidth();
 
-    // the buttons of the toolbar come first in the tab order, followed by the page and the dialog buttons
-    QWidget *previous = nullptr;
+    // the buttons of the toolbar come first in the tab order; the pages and the dialog buttons
+    // follow them. The dialog itself doesn't accept focus, so the order has to be forced.
+    QWidget *previous = this;
     const auto actions = mPageActions->actions();
     for (auto action : actions) {
         if (auto button = mToolBar->widgetForAction(action)) {
-            if (previous) {
-                setTabOrder(previous, button);
-            }
+            Kleo::forceSetTabOrder(previous, button);
             previous = button;
         }
-    }
-    if (previous) {
-        setTabOrder(previous, pageWidget());
-        setTabOrder(pageWidget(), buttonBox());
     }
 }
 
