@@ -1,0 +1,20 @@
+# SPDX-FileCopyrightText: none
+# SPDX-License-Identifier: CC0-1.0
+#
+# Exceptions from blacklist_macos.txt.
+
+# GnuPG programs and pinentry
+bin/(dirmngr|dirmngr-client|gpg|gpg-agent|gpg-card|gpg-connect-agent|gpg-wks-client|gpgconf|gpgsm|gpgtar|gpgv|pinentry|pinentry-qt)
+libexec/(keyboxd|scdaemon|gpg-auth|gpg-check-pattern|gpg-pair-tool|gpg-preset-passphrase|gpg-protect-tool)
+
+# helpers of KDE Frameworks
+bin/kbuildsycoca6
+lib/libexec/kf6/kioworker
+
+# translations of Kleopatra, its libraries and the bundled GnuPG
+share/locale/[^/]+/LC_MESSAGES/(kleopatra|libkleopatra6|mimetreeparser6|gnupg2|libgpg-error|pinentry)\.mo
+share/locale/[^/]+/LC_MESSAGES/k[a-z]*6(_qt)?\.(mo|qm)
+share/locale/[^/]+/LC_MESSAGES/(libkmime6_qt\.qm|solid6_qt\.qm|sonnet6_qt\.qm|breeze_style_config\.mo|kf6_entry\.desktop)
+share/locale/[^/]+/LC_SCRIPTS/.*
+share/locale/locale\.alias
+translations/(qt|qtbase|qtdeclarative|qtmultimedia)_.*\.qm
