@@ -91,6 +91,7 @@
 #include <QStyleOption>
 #include <QStylePainter>
 #include <QTemporaryDir>
+#include <QToolButton>
 
 #include <KConfigGroup>
 #include <KSharedConfig>
@@ -378,6 +379,17 @@ public:
 
     QSize sizeFromContents(ContentsType type, const QStyleOption *option, const QSize &contentsSize, const QWidget *widget = nullptr) const override
     {
+        if (type == CT_ToolButton && isPushButtonLikeToolButton(widget)) {
+            if (auto toolButtonOption = qstyleoption_cast<const QStyleOptionToolButton *>(option)) {
+                // like QPushButton calculates the size of its contents
+                const QStyleOptionButton buttonOption = pushButtonOption(*toolButtonOption);
+                QSize textSize = buttonOption.fontMetrics.size(Qt::TextShowMnemonic, buttonOption.text);
+                if (buttonOption.features & QStyleOptionButton::HasMenu) {
+                    textSize.rwidth() += pixelMetric(PM_MenuButtonIndicator, &buttonOption, widget);
+                }
+                return QProxyStyle::sizeFromContents(CT_PushButton, &buttonOption, textSize, widget);
+            }
+        }
         if (type == CT_PushButton && isMacStyle()) {
             if (auto buttonOption = qstyleoption_cast<const QStyleOptionButton *>(option); buttonOption && hasTextAndIcon(*buttonOption)) {
                 // QPushButton adds the space for the icon to the size of the contents
@@ -397,6 +409,33 @@ public:
             return;
         }
         QProxyStyle::drawPrimitive(element, option, painter, widget);
+    }
+
+    void drawComplexControl(ComplexControl control, const QStyleOptionComplex *option, QPainter *painter, const QWidget *widget = nullptr) const override
+    {
+        if (control == CC_ToolButton && isPushButtonLikeToolButton(widget)) {
+            if (auto toolButtonOption = qstyleoption_cast<const QStyleOptionToolButton *>(option)) {
+                const QStyleOptionButton buttonOption = pushButtonOption(*toolButtonOption);
+                painter->save();
+                painter->setFont(QApplication::font("QPushButton"));
+                QProxyStyle::drawControl(CE_PushButton, &buttonOption, painter, widget);
+                painter->restore();
+                return;
+            }
+        }
+        QProxyStyle::drawComplexControl(control, option, painter, widget);
+    }
+
+    QRect subElementRect(SubElement element, const QStyleOption *option, const QWidget *widget = nullptr) const override
+    {
+        if (element == SE_ToolButtonLayoutItem && option && isPushButtonLikeToolButton(widget)) {
+            QStyleOptionButton buttonOption;
+            buttonOption.rect = option->rect;
+            buttonOption.state = option->state;
+            buttonOption.direction = option->direction;
+            return QProxyStyle::subElementRect(SE_PushButtonLayoutItem, &buttonOption, widget);
+        }
+        return QProxyStyle::subElementRect(element, option, widget);
     }
 
     QRect subControlRect(ComplexControl control, const QStyleOptionComplex *option, SubControl subControl, const QWidget *widget = nullptr) const override
@@ -421,6 +460,52 @@ public:
     {
         return !option.text.isEmpty() && !option.icon.isNull();
     }
+
+    // Returns whether a tool button is used like a push button, i.e. it's a button with a text
+    // that isn't part of a toolbar or of another widget. The macOS style draws tool buttons as
+    // small square buttons which look out of place next to push buttons. Therefore, such tool
+    // buttons are drawn like push buttons.
+    bool isPushButtonLikeToolButton(const QWidget *widget) const
+    {
+        const auto button = qobject_cast<const QToolButton *>(widget);
+        if (!button || !isMacStyle() || button->autoRaise() || button->text().isEmpty()) {
+            return false;
+        }
+        if (button->toolButtonStyle() != Qt::ToolButtonTextOnly && button->toolButtonStyle() != Qt::ToolButtonTextBesideIcon) {
+            return false;
+        }
+        for (auto parent = button->parentWidget(); parent; parent = parent->parentWidget()) {
+            if (parent->inherits("QToolBar") || parent->inherits("QTabBar") || parent->inherits("QTabWidget") || parent->inherits("QAbstractItemView")
+                || parent->inherits("KMessageWidget")) {
+                return false;
+            }
+            if (parent->isWindow()) {
+                break;
+            }
+        }
+        return true;
+    }
+
+    // Returns the option for drawing a tool button as push button without icon
+    static QStyleOptionButton pushButtonOption(const QStyleOptionToolButton &option)
+    {
+        QStyleOptionButton buttonOption;
+        buttonOption.rect = option.rect;
+        buttonOption.state = option.state;
+        if (!(buttonOption.state & (State_Sunken | State_On))) {
+            buttonOption.state |= State_Raised;
+        }
+        buttonOption.direction = option.direction;
+        buttonOption.palette = option.palette;
+        buttonOption.styleObject = option.styleObject;
+        // tool buttons have a smaller font than push buttons
+        buttonOption.fontMetrics = QFontMetrics{QApplication::font("QPushButton")};
+        buttonOption.text = option.text;
+        if (option.features & (QStyleOptionToolButton::HasMenu | QStyleOptionToolButton::MenuButtonPopup)) {
+            buttonOption.features |= QStyleOptionButton::HasMenu;
+        }
+        return buttonOption;
+    }
 #endif
 
     void polish(QWidget *widget) override
@@ -429,6 +514,15 @@ public:
         const bool wasAutoDefault = pushButton ? pushButton->autoDefault() : false;
 
         QProxyStyle::polish(widget);
+
+#ifdef Q_OS_MACOS
+        if (isPushButtonLikeToolButton(widget)) {
+            // QToolButton looks up its layout margins when it's created, i.e. before it's known
+            // how it is used; make it look them up again
+            QEvent event{QEvent::MacSizeChange};
+            QCoreApplication::sendEvent(widget, &event);
+        }
+#endif
 
         if (pushButton && wasAutoDefault && pushButton->autoDefault() != wasAutoDefault) {
             // the style (Breeze?) messed with the autoDefault property; set it again to true
