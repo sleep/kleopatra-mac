@@ -18,6 +18,9 @@
 
 #import <AppKit/AppKit.h>
 
+#include <algorithm>
+#include <cmath>
+
 using namespace Qt::StringLiterals;
 
 namespace
@@ -78,8 +81,10 @@ public:
             if (!symbol) {
                 return {};
             }
-            // symbols are drawn a bit smaller than the icon size, like in native toolbars
-            NSImageSymbolConfiguration *config = [NSImageSymbolConfiguration configurationWithPointSize:size.height() * 0.75
+            // Symbols are drawn smaller than the icon size, like in native toolbars. With this
+            // point size also the wider ones of the symbols in use fit into a square icon, so
+            // that all symbols are drawn with the same size and stroke width.
+            NSImageSymbolConfiguration *config = [NSImageSymbolConfiguration configurationWithPointSize:size.height() * 0.62
                                                                                                  weight:NSFontWeightRegular
                                                                                                   scale:NSImageSymbolScaleMedium];
             symbol = [symbol imageWithSymbolConfiguration:config];
@@ -101,8 +106,13 @@ public:
             NSSize symbolSize = symbol.size;
             const qreal factor = std::min(pixelSize.width() / symbolSize.width, pixelSize.height() / symbolSize.height);
             symbolSize = NSMakeSize(symbolSize.width * std::min<qreal>(factor, scale), symbolSize.height * std::min<qreal>(factor, scale));
-            const NSRect target = NSMakeRect((pixelSize.width() - symbolSize.width) / 2,
-                                             (pixelSize.height() - symbolSize.height) / 2,
+            if (factor < scale) {
+                // a symbol that had to be shrunk to fit doesn't have a whole number of pixels anymore
+                symbolSize = NSMakeSize(std::max(1.0, std::round(symbolSize.width)), std::max(1.0, std::round(symbolSize.height)));
+            }
+            // the symbol is aligned to whole pixels; otherwise, it would be blurred
+            const NSRect target = NSMakeRect(std::floor((pixelSize.width() - symbolSize.width) / 2),
+                                             std::floor((pixelSize.height() - symbolSize.height) / 2),
                                              symbolSize.width,
                                              symbolSize.height);
             [symbol drawInRect:target fromRect:NSZeroRect operation:NSCompositingOperationSourceOver fraction:1.0];
@@ -186,7 +196,7 @@ QIcon Kleo::MacOS::symbolIconFor(const QIcon &icon)
         {u"view-certificate"_s, u"list.bullet.rectangle"_s},
         {u"note"_s, u"note.text"_s},
         {u"auth-sim-locked"_s, u"creditcard"_s},
-        {u"group"_s, u"person.3"_s},
+        {u"group"_s, u"person.2"_s},
     };
     const QString symbolName = symbols.value(icon.name());
     return symbolName.isEmpty() ? icon : symbolIcon(symbolName, icon);
