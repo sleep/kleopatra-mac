@@ -1,0 +1,48 @@
+# SPDX-FileCopyrightText: none
+# SPDX-License-Identifier: CC0-1.0
+#
+# Files of the dependencies that Kleopatra doesn't need on macOS. Paths are relative to the
+# install prefix before the app bundle is assembled. whitelist_macos.txt lists exceptions.
+
+# programs: only the GnuPG programs and the helpers listed in the whitelist are needed
+bin/.*
+libexec/.*
+lib/libexec/.*
+Applications/KDE/kwatchgnupg\.app
+
+# Python of Craft
+lib/Python\.framework
+lib/python3.*
+lib/libpython.*
+
+# multimedia, used by QtMultimedia and QtTextToSpeech which Kleopatra doesn't use
+lib/lib(avcodec|avdevice|avfilter|avformat|avutil|swresample|swscale|postproc)(\..*)?\.dylib
+lib/lib(aom|dav1d|vpx|x264|x265|zimg|ass|mp3lame|opus|ogg|vorbis|vorbisenc|vorbisfile|samplerate|fftw3|SDL2.*)(\..*)?\.dylib
+lib/QtMultimedia.*\.framework
+lib/QtSpatialAudio\.framework
+lib/QtTextToSpeech\.framework
+
+# QML and Qt Quick modules; Kleopatra is a Qt Widgets application
+qml/.*
+lib/QtQuick(Controls2|Dialogs2|Templates2|Particles|Effects|Layouts|Shapes|Test|VectorImage|Widgets).*\.framework
+lib/QtQml(Compiler|Core|LocalStorage|Network|XmlListModel)\.framework
+lib/QtLabs.*\.framework
+lib/QtShaderTools\.framework
+lib/lib(Kirigami|KF6KCMUtils|KF6ConfigQml|KF6I18nQml|KF6I18nLocaleData|KF6Package|KF6SonnetUi|KF6TextWidgets).*\.dylib
+
+# other Qt modules and libraries that are only used by build tools or other applications
+lib/Qt(Sql|Test|OpenGLWidgets|SvgWidgets|Designer|DesignerComponents|Help|UiTools|LanguageServer|JsonRpc)\.framework
+lib/libboost_.*\.dylib
+lib/lib(gettextpo|gettextsrc|gettextlib|asprintf|girepository|unistring)(-.*)?(\..*)?\.dylib
+lib/lib(cairo|cairo-gobject|cairo-script-interpreter|pixman-1|fontconfig|harfbuzz-cairo|harfbuzz-subset|harfbuzz-icu|turbojpeg|gif|fribidi|sharpyuv|brotlienc|expat|pcre2-32|pcre2-posix|icutu|icutest|icuio)(\..*)?\.dylib
+lib/libwebp.*\.dylib
+lib/libical(ss)?_cxx(\..*)?\.dylib
+lib/cairo/.*
+
+# plugins of unused Qt modules
+(lib/)?plugins/(multimedia|qmlls|qmltooling|sqldrivers|texttospeech|generic|designer|platforminputcontexts|position|sensors|webview|kf6/kio_dnd|kf6/kauth/.*|kf6/kio/kio_(ftp|ghelp|help|remote|trash)\.so)/?.*
+
+# data of unused packages
+share/(glib-2.0|gettext.*|gtk-doc|fontconfig|ffmpeg|iso-codes|kdevappwizard|common-lisp|QtCurve|applications|metainfo|pixmaps|dbus-1|libical)/.*
+share/locale/.*
+translations/.*

@@ -41,6 +41,11 @@ craft-blueprints-kde on macOS:
   relocated with `gpgconf.ctl` when it is bundled in the app bundle
 - libgcrypt and libassuan versions required by GnuPG 2.5
 - pinentry-qt, which is bundled for asking for passphrases
+- Kleopatra itself, with lists of files to leave out of the app bundle
+  (`blacklist_macos.txt`) and exceptions (`whitelist_macos.txt`). Craft puts all files
+  of all dependencies into the bundle by default, including Python, multimedia and QML
+  libraries, build tools and unrelated translations. The lists shrink the app to about
+  a third of that.
 
 Register the overlay in `~/CraftRoot/etc/CraftSettings.ini`:
 
@@ -58,13 +63,15 @@ craft --search libs/gnupg   # BlueprintPath should point into packaging/macos
 ## Building and packaging
 
 ```sh
-# the blueprint of mimetreeparser doesn't list KIO yet, so install it first
-craft kde/frameworks/tier3/kio
 craft kde/pim/kleopatra
 craft --package kde/pim/kleopatra
 ```
 
 The package is a disk image in `~/CraftRoot/tmp/`.
+
+If you leave something out of the bundle, check that all library references still
+resolve, for example with `otool -L`, and that the app and the bundled GnuPG still
+work (see Testing).
 
 After changing the sources, rebuild with:
 
