@@ -44,6 +44,10 @@
 
 #include <map>
 
+#ifdef Q_OS_MACOS
+#include "macos/macosstyle.h"
+#endif
+
 using namespace Kleo;
 using namespace GpgME;
 
@@ -1032,6 +1036,9 @@ QTreeView *TabWidget::Private::addView(Page *page, Page *columnReference)
 
     page->setFlatModel(flatModel);
     page->setHierarchicalModel(hierarchicalModel);
+#ifdef Q_OS_MACOS
+    Kleo::MacOS::styleItemView(page->view());
+#endif
 
     connect(page, &Page::titleChanged, q, [this](const QString &text) {
         slotPageTitleChanged(text);

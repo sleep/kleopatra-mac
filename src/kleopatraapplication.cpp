@@ -348,6 +348,51 @@ public:
         return QProxyStyle::styleHint(hint, option, widget, returnData);
     }
 
+#ifdef Q_OS_MACOS
+    // push buttons of macOS applications show only their text, so icons are left out of
+    // buttons that have a text
+    void drawControl(ControlElement element, const QStyleOption *option, QPainter *painter, const QWidget *widget = nullptr) const override
+    {
+        if (element == CE_PushButton || element == CE_PushButtonLabel) {
+            if (auto buttonOption = qstyleoption_cast<const QStyleOptionButton *>(option); buttonOption && hasTextAndIcon(*buttonOption)) {
+                QStyleOptionButton optionWithoutIcon{*buttonOption};
+                optionWithoutIcon.icon = {};
+                QProxyStyle::drawControl(element, &optionWithoutIcon, painter, widget);
+                return;
+            }
+        }
+        QProxyStyle::drawControl(element, option, painter, widget);
+    }
+
+    QSize sizeFromContents(ContentsType type, const QStyleOption *option, const QSize &contentsSize, const QWidget *widget = nullptr) const override
+    {
+        if (type == CT_PushButton) {
+            if (auto buttonOption = qstyleoption_cast<const QStyleOptionButton *>(option); buttonOption && hasTextAndIcon(*buttonOption)) {
+                // QPushButton adds the space for the icon to the size of the contents
+                const QSize sizeWithoutIcon{contentsSize.width() - buttonOption->iconSize.width() - 4, contentsSize.height()};
+                QStyleOptionButton optionWithoutIcon{*buttonOption};
+                optionWithoutIcon.icon = {};
+                return QProxyStyle::sizeFromContents(type, &optionWithoutIcon, sizeWithoutIcon, widget);
+            }
+        }
+        return QProxyStyle::sizeFromContents(type, option, contentsSize, widget);
+    }
+
+    void drawPrimitive(PrimitiveElement element, const QStyleOption *option, QPainter *painter, const QWidget *widget = nullptr) const override
+    {
+        // toolbars of macOS applications use spacing instead of separator lines
+        if (element == PE_IndicatorToolBarSeparator) {
+            return;
+        }
+        QProxyStyle::drawPrimitive(element, option, painter, widget);
+    }
+
+    static bool hasTextAndIcon(const QStyleOptionButton &option)
+    {
+        return !option.text.isEmpty() && !option.icon.isNull();
+    }
+#endif
+
     void polish(QWidget *widget) override
     {
         auto pushButton = qobject_cast<QPushButton *>(widget);
@@ -368,6 +413,8 @@ KleopatraApplication::KleopatraApplication(int &argc, char *argv[])
 {
 #ifdef Q_OS_MACOS
     applyWidgetStyle();
+    // menus of macOS applications don't show icons
+    setAttribute(Qt::AA_DontShowIconsInMenus);
 #else
     setStyle(new KleopatraProxyStyle);
 #endif
