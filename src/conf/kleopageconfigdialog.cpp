@@ -25,6 +25,7 @@
 #include <QActionGroup>
 #include <QDesktopServices>
 #include <QDialogButtonBox>
+#include <QEvent>
 #include <QLocale>
 #include <QProcess>
 #include <QPushButton>
@@ -64,13 +65,36 @@ KleoPageConfigDialog::KleoPageConfigDialog(QWidget *parent)
 #ifdef Q_OS_MACOS
 void KleoPageConfigDialog::showEvent(QShowEvent *event)
 {
-    // KPageDialog recreates its layout when the button box is set, so the toolbar is added
-    // to the layout as late as possible
-    auto dialogLayout = qobject_cast<QBoxLayout *>(layout());
-    if (dialogLayout && dialogLayout->indexOf(mToolBar) < 0) {
-        dialogLayout->insertWidget(0, mToolBar);
-    }
+    // KPageDialog recreates its layout whenever the button box is set, so make sure that
+    // the toolbar is (still) part of the layout
+    addToolBarToLayout();
     KPageDialog::showEvent(event);
+}
+
+void KleoPageConfigDialog::changeEvent(QEvent *event)
+{
+    KPageDialog::changeEvent(event);
+    if (event->type() == QEvent::StyleChange || event->type() == QEvent::FontChange) {
+        // the buttons of the toolbar are updated after the dialog
+        QMetaObject::invokeMethod(this, &KleoPageConfigDialog::updateToolBarWidth, Qt::QueuedConnection);
+    }
+}
+
+void KleoPageConfigDialog::addToolBarToLayout()
+{
+    auto dialogLayout = qobject_cast<QBoxLayout *>(layout());
+    if (!dialogLayout || dialogLayout->indexOf(mToolBar) >= 0) {
+        return;
+    }
+    dialogLayout->insertWidget(0, mToolBar);
+    updateToolBarWidth();
+}
+
+void KleoPageConfigDialog::updateToolBarWidth()
+{
+    // never make the toolbar move page buttons to its extension menu
+    mToolBar->ensurePolished();
+    mToolBar->setMinimumWidth(mToolBar->sizeHint().width());
 }
 
 void KleoPageConfigDialog::updateToolBar()
@@ -112,6 +136,10 @@ void KleoPageConfigDialog::initButtons()
     // is set; forward it only once, so that a change of the page is handled only once
     disconnect(pageWidget(), &KPageWidget::currentPageChanged, this, &KPageDialog::currentPageChanged);
     connect(pageWidget(), &KPageWidget::currentPageChanged, this, &KPageDialog::currentPageChanged);
+#ifdef Q_OS_MACOS
+    // add the toolbar before the dialog is shown, so that it's considered for the initial size
+    addToolBarToLayout();
+#endif
 
     connect(this, &KPageDialog::currentPageChanged, this, &KleoPageConfigDialog::slotCurrentPageChanged);
 }

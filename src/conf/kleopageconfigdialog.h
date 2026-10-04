@@ -54,6 +54,7 @@ protected:
     void initButtons();
 #ifdef Q_OS_MACOS
     void showEvent(QShowEvent *event) override;
+    void changeEvent(QEvent *event) override;
 #endif
 
 private:
@@ -65,6 +66,8 @@ private:
 #ifdef Q_OS_MACOS
     // like the settings windows of macOS applications, the pages are selected with a toolbar
     void updateToolBar();
+    void addToolBarToLayout();
+    void updateToolBarWidth();
     QToolBar *mToolBar = nullptr;
     QActionGroup *mPageActions = nullptr;
     QHash<KPageWidgetItem *, QAction *> mPageActionForItem;
