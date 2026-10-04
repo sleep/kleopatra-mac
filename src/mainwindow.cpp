@@ -340,6 +340,13 @@ public:
 
     void slotFocusQuickSearch()
     {
+        if (padViewIsShown()) {
+            showCertificateView();
+        }
+        if (ui.stackWidget->currentWidget() != ui.searchTab) {
+            // there's nothing to search
+            return;
+        }
         ui.searchTab->searchBar()->lineEdit()->setFocus();
     }
 
@@ -390,6 +397,10 @@ public:
         }
         if (auto action = q->actionCollection()->action(u"pad_view"_s)) {
             action->setChecked(padShown);
+        }
+        // the search field in the toolbar is only useful for the certificate list
+        if (auto action = q->actionCollection()->action(u"search_field"_s)) {
+            action->setEnabled(ui.stackWidget->currentWidget() == ui.searchTab);
         }
     }
 
