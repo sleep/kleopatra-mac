@@ -80,9 +80,12 @@ ConfigureDialog::ConfigureDialog(QWidget *parent)
                   QStringLiteral("gearshape.2"));
     }
 
+#ifndef Q_OS_MACOS
+    // the list of the pages only exists with the List face
     if (auto moduleListView = findChild<QListView *>()) {
         moduleListView->setAccessibleName(i18nc("@label", "Settings"));
     }
+#endif
 
     initButtons();
 

@@ -54,6 +54,7 @@ KleoPageConfigDialog::KleoPageConfigDialog(QWidget *parent)
 #ifdef Q_OS_MACOS
     setFaceType(KPageDialog::Plain);
     mToolBar = new QToolBar{this};
+    mToolBar->setAccessibleName(i18nc("@label", "Settings"));
     mToolBar->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
     mToolBar->setIconSize({24, 24});
     mToolBar->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
