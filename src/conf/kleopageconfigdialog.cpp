@@ -34,6 +34,7 @@
 
 #include <KLocalizedString>
 #include <KMessageBox>
+#include <KPageWidget>
 #include <KStandardGuiItem>
 
 #include "kleopatra_debug.h"
@@ -107,12 +108,17 @@ void KleoPageConfigDialog::initButtons()
 
     setButtonBox(buttonBox);
 
+    // KPageDialog forwards the signal of the page widget once more each time the button box
+    // is set; forward it only once, so that a change of the page is handled only once
+    disconnect(pageWidget(), &KPageWidget::currentPageChanged, this, &KPageDialog::currentPageChanged);
+    connect(pageWidget(), &KPageWidget::currentPageChanged, this, &KPageDialog::currentPageChanged);
+
     connect(this, &KPageDialog::currentPageChanged, this, &KleoPageConfigDialog::slotCurrentPageChanged);
 }
 
 void KleoPageConfigDialog::slotCurrentPageChanged(KPageWidgetItem *current, KPageWidgetItem *previous)
 {
-    if (!previous) {
+    if (!previous || currentPage() != current) {
         return;
     }
     blockSignals(true);
