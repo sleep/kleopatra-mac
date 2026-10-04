@@ -263,6 +263,10 @@ void KleoPageConfigDialog::slotHelpClicked()
 #ifdef Q_OS_WIN
     docUrl =
         QUrl(QLatin1StringView("https://docs.kde.org/index.php?branch=stable5&language=") + QLocale().name() + QLatin1StringView("&application=kleopatra"));
+#elif defined(Q_OS_MACOS)
+    // there's no help center on macOS, so the online documentation is opened in the browser
+    Q_UNUSED(docPath)
+    docUrl = QUrl(QStringLiteral("https://docs.kde.org/?application=kleopatra&branch=stable6"));
 #else
     docUrl = QUrl(QStringLiteral("help:/")).resolved(QUrl(docPath)); // same code as in KHelpClient::invokeHelp
 #endif
