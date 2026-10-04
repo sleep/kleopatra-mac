@@ -818,7 +818,8 @@ void MainWindow::Private::setupActions()
     coll->addAction(QStringLiteral("colorscheme_menu"), schemeMenu->menu()->menuAction());
 #ifdef Q_OS_MACOS
     coll->addAction(u"configure_style"_s, KleopatraApplication::instance()->createConfigureStyleAction(q));
-    coll->addAction(u"search_field"_s, createSearchFieldAction());
+    // the toolbar item of the search field can't be triggered
+    KActionCollection::setShortcutsConfigurable(coll->addAction(u"search_field"_s, createSearchFieldAction()), false);
 #endif
 
     focusToClickSearchAction = new QAction(i18nc("@action", "Set Focus to Quick Search"), q);
