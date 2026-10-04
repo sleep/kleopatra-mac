@@ -40,6 +40,7 @@
 
 #include <QAccessible>
 #include <QButtonGroup>
+#include <QFontDatabase>
 #include <QFontMetrics>
 #include <QFrame>
 #include <QLabel>
@@ -174,8 +175,7 @@ public:
         resetAccessibleNameAndDescription();
         mEdit->setPlaceholderText(i18nc("@info:placeholder", "Enter a message to encrypt or decrypt..."));
 
-        auto fixedFont = QFont(QStringLiteral("Monospace"));
-        fixedFont.setStyleHint(QFont::TypeWriter);
+        const auto fixedFont = QFontDatabase::systemFont(QFontDatabase::FixedFont);
 
         mEdit->setFont(fixedFont);
         mEdit->setAcceptRichText(false);
