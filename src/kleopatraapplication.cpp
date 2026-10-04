@@ -812,6 +812,15 @@ static void open_or_raise(QWidget *w)
     } else if (w->isVisible()) {
         qCDebug(KLEOPATRA_LOG) << __func__ << "raising window";
         w->raise();
+#elif defined(Q_OS_MACOS)
+    // KWindowSystem cannot activate windows on macOS
+    if (w->isVisible()) {
+        qCDebug(KLEOPATRA_LOG) << __func__ << "raising and activating window";
+        if (w->isMinimized()) {
+            w->setWindowState(w->windowState() & ~Qt::WindowMinimized);
+        }
+        w->raise();
+        w->activateWindow();
 #else
     if (w->isVisible()) {
         qCDebug(KLEOPATRA_LOG) << __func__ << "activating window";
