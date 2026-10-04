@@ -22,12 +22,15 @@
 
 #include "kleoconfigmodule.h"
 
+#include <QActionGroup>
 #include <QDesktopServices>
 #include <QDialogButtonBox>
 #include <QLocale>
 #include <QProcess>
 #include <QPushButton>
+#include <QToolBar>
 #include <QUrl>
+#include <QVBoxLayout>
 
 #include <KLocalizedString>
 #include <KMessageBox>
@@ -35,13 +38,48 @@
 
 #include "kleopatra_debug.h"
 
+#ifdef Q_OS_MACOS
+#include "macos/macosstyle.h"
+#endif
+
 using namespace Kleo::Config;
 
 KleoPageConfigDialog::KleoPageConfigDialog(QWidget *parent)
     : KPageDialog(parent)
 {
     setModal(false);
+#ifdef Q_OS_MACOS
+    setFaceType(KPageDialog::Plain);
+    mToolBar = new QToolBar{this};
+    mToolBar->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
+    mToolBar->setIconSize({24, 24});
+    mToolBar->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    mPageActions = new QActionGroup{this};
+    mPageActions->setExclusive(true);
+    connect(this, &KPageDialog::currentPageChanged, this, &KleoPageConfigDialog::updateToolBar, Qt::QueuedConnection);
+#endif
 }
+
+#ifdef Q_OS_MACOS
+void KleoPageConfigDialog::showEvent(QShowEvent *event)
+{
+    // KPageDialog recreates its layout when the button box is set, so the toolbar is added
+    // to the layout as late as possible
+    auto dialogLayout = qobject_cast<QBoxLayout *>(layout());
+    if (dialogLayout && dialogLayout->indexOf(mToolBar) < 0) {
+        dialogLayout->insertWidget(0, mToolBar);
+    }
+    KPageDialog::showEvent(event);
+}
+
+void KleoPageConfigDialog::updateToolBar()
+{
+    if (auto action = mPageActionForItem.value(currentPage())) {
+        action->setChecked(true);
+        setWindowTitle(currentPage()->name());
+    }
+}
+#endif
 
 void KleoPageConfigDialog::initButtons()
 {
@@ -184,11 +222,27 @@ void KleoPageConfigDialog::slotHelpClicked()
     }
 }
 
-void KleoPageConfigDialog::addModule(const QString &name, const QString &docPath, const QString &icon, KleoConfigModule *module)
+void KleoPageConfigDialog::addModule(const QString &name, const QString &docPath, const QString &icon, KleoConfigModule *module, const QString &macOSSymbolName)
 {
     module->load();
     auto item = addPage(module, name);
     item->setIcon(QIcon::fromTheme(icon));
+#ifdef Q_OS_MACOS
+    // the name of the page is shown as window title
+    item->setHeaderVisible(false);
+    auto action = mToolBar->addAction(Kleo::MacOS::symbolIcon(macOSSymbolName, item->icon()), name);
+    action->setCheckable(true);
+    action->setActionGroup(mPageActions);
+    connect(action, &QAction::triggered, this, [this, item]() {
+        setCurrentPage(item);
+        // switching the page may have been canceled
+        updateToolBar();
+    });
+    mPageActionForItem.insert(item, action);
+    updateToolBar();
+#else
+    Q_UNUSED(macOSSymbolName)
+#endif
     connect(module, &KleoConfigModule::changed, this, [this, module]() {
         moduleChanged(true);
         mChangedModules.insert(module);
