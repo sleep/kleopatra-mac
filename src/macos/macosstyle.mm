@@ -22,19 +22,24 @@ using namespace Qt::StringLiterals;
 
 namespace
 {
+bool nativeStyleActive = true;
+
 // Draws an SF Symbol as a template image tinted with the palette color for the requested
 // mode. The tinting happens when painting, so that the icon follows appearance changes.
+// SF Symbols belong to the look of macOS; with other widget styles the fallback icon is
+// drawn instead. This is also decided when painting, so that the icon follows style changes.
 class SymbolIconEngine : public QIconEngine
 {
 public:
-    explicit SymbolIconEngine(const QString &symbolName)
+    explicit SymbolIconEngine(const QString &symbolName, const QIcon &fallback)
         : mSymbolName{symbolName}
+        , mFallback{fallback}
     {
     }
 
     QIconEngine *clone() const override
     {
-        return new SymbolIconEngine{mSymbolName};
+        return new SymbolIconEngine{mSymbolName, mFallback};
     }
 
     QString key() const override
@@ -44,6 +49,10 @@ public:
 
     void paint(QPainter *painter, const QRect &rect, QIcon::Mode mode, QIcon::State state) override
     {
+        if (useFallback()) {
+            mFallback.paint(painter, rect, Qt::AlignCenter, mode, state);
+            return;
+        }
         const qreal scale = painter->device() ? painter->device()->devicePixelRatioF() : qApp->devicePixelRatio();
         painter->drawPixmap(rect, scaledPixmap(rect.size(), mode, state, scale));
     }
@@ -53,8 +62,11 @@ public:
         return scaledPixmap(size, mode, state, 1.0);
     }
 
-    QPixmap scaledPixmap(const QSize &size, QIcon::Mode mode, QIcon::State, qreal scale) override
+    QPixmap scaledPixmap(const QSize &size, QIcon::Mode mode, QIcon::State state, qreal scale) override
     {
+        if (useFallback()) {
+            return mFallback.pixmap(size, scale, mode, state);
+        }
         const QSize pixelSize = size * scale;
         if (pixelSize.isEmpty()) {
             return {};
@@ -119,13 +131,20 @@ public:
         return result;
     }
 
-    QSize actualSize(const QSize &size, QIcon::Mode, QIcon::State) override
+    QSize actualSize(const QSize &size, QIcon::Mode mode, QIcon::State state) override
     {
-        return size;
+        return useFallback() ? mFallback.actualSize(size, mode, state) : size;
+    }
+
+private:
+    bool useFallback() const
+    {
+        return !nativeStyleActive && !mFallback.isNull();
     }
 
 private:
     QString mSymbolName;
+    QIcon mFallback;
 };
 
 bool symbolExists(const QString &symbolName)
@@ -136,12 +155,22 @@ bool symbolExists(const QString &symbolName)
 }
 }
 
+void Kleo::MacOS::setNativeStyleActive(bool active)
+{
+    nativeStyleActive = active;
+}
+
+bool Kleo::MacOS::isNativeStyleActive()
+{
+    return nativeStyleActive;
+}
+
 QIcon Kleo::MacOS::symbolIcon(const QString &symbolName, const QIcon &fallback)
 {
     if (!symbolExists(symbolName)) {
         return fallback;
     }
-    return QIcon{new SymbolIconEngine{symbolName}};
+    return QIcon{new SymbolIconEngine{symbolName, fallback}};
 }
 
 QIcon Kleo::MacOS::symbolIconFor(const QIcon &icon)

@@ -57,6 +57,9 @@
 #ifdef Q_OS_WIN
 #include <utils/winapi-helpers.h>
 #endif
+#ifdef Q_OS_MACOS
+#include "macos/macosstyle.h"
+#endif
 
 #include "kleopatra_debug.h"
 #include <KAboutApplicationDialog>
@@ -71,6 +74,7 @@
 #define HAVE_WAYLAND
 #endif
 
+#include <QActionEvent>
 #include <QActionGroup>
 #include <QDesktopServices>
 #include <QDir>
@@ -350,11 +354,18 @@ public:
     }
 
 #ifdef Q_OS_MACOS
+    // Returns whether the native style of macOS is used. The look of macOS applications is only
+    // imitated together with this style, so that other styles look like on other platforms.
+    bool isMacStyle() const
+    {
+        return baseStyle()->inherits("QMacStyle");
+    }
+
     // push buttons of macOS applications show only their text, so icons are left out of
     // buttons that have a text
     void drawControl(ControlElement element, const QStyleOption *option, QPainter *painter, const QWidget *widget = nullptr) const override
     {
-        if (element == CE_PushButton || element == CE_PushButtonLabel) {
+        if ((element == CE_PushButton || element == CE_PushButtonLabel) && isMacStyle()) {
             if (auto buttonOption = qstyleoption_cast<const QStyleOptionButton *>(option); buttonOption && hasTextAndIcon(*buttonOption)) {
                 QStyleOptionButton optionWithoutIcon{*buttonOption};
                 optionWithoutIcon.icon = {};
@@ -367,7 +378,7 @@ public:
 
     QSize sizeFromContents(ContentsType type, const QStyleOption *option, const QSize &contentsSize, const QWidget *widget = nullptr) const override
     {
-        if (type == CT_PushButton) {
+        if (type == CT_PushButton && isMacStyle()) {
             if (auto buttonOption = qstyleoption_cast<const QStyleOptionButton *>(option); buttonOption && hasTextAndIcon(*buttonOption)) {
                 // QPushButton adds the space for the icon to the size of the contents
                 const QSize sizeWithoutIcon{contentsSize.width() - buttonOption->iconSize.width() - 4, contentsSize.height()};
@@ -382,7 +393,7 @@ public:
     void drawPrimitive(PrimitiveElement element, const QStyleOption *option, QPainter *painter, const QWidget *widget = nullptr) const override
     {
         // toolbars of macOS applications use spacing instead of separator lines
-        if (element == PE_IndicatorToolBarSeparator) {
+        if (element == PE_IndicatorToolBarSeparator && isMacStyle()) {
             return;
         }
         QProxyStyle::drawPrimitive(element, option, painter, widget);
@@ -464,8 +475,6 @@ KleopatraApplication::KleopatraApplication(int &argc, char *argv[])
 {
 #ifdef Q_OS_MACOS
     applyWidgetStyle();
-    // menus of macOS applications don't show icons
-    setAttribute(Qt::AA_DontShowIconsInMenus);
 #else
     setStyle(new KleopatraProxyStyle);
 #endif
@@ -489,7 +498,26 @@ void KleopatraApplication::applyWidgetStyle()
             chosenStyle.clear();
         }
     }
-    setStyle(chosenStyle.isEmpty() ? new KleopatraProxyStyle : new KleopatraProxyStyle{chosenStyle});
+    auto style = chosenStyle.isEmpty() ? new KleopatraProxyStyle : new KleopatraProxyStyle{chosenStyle};
+    const bool nativeStyle = style->isMacStyle();
+    Kleo::MacOS::setNativeStyleActive(nativeStyle);
+    setStyle(style);
+
+    // menus of macOS applications don't show icons
+    if (testAttribute(Qt::AA_DontShowIconsInMenus) != nativeStyle) {
+        setAttribute(Qt::AA_DontShowIconsInMenus, nativeStyle);
+        // make existing menus update their items
+        const auto widgets = allWidgets();
+        for (auto widget : widgets) {
+            if (auto menu = qobject_cast<QMenu *>(widget)) {
+                const auto actions = menu->actions();
+                for (auto action : actions) {
+                    QActionEvent event{QEvent::ActionChanged, action};
+                    sendEvent(menu, &event);
+                }
+            }
+        }
+    }
 }
 
 QAction *KleopatraApplication::createConfigureStyleAction(QObject *parent)
