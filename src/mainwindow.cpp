@@ -402,8 +402,15 @@ public:
         if (auto action = q->actionCollection()->action(u"pad_view"_s)) {
             action->setCheckable(inMainWindow);
         }
-        if (!inMainWindow && padViewIsShown()) {
-            showCertificateView();
+        if (!inMainWindow && ui.padWidget) {
+            // the notepad in the main window can't be reached anymore; discard it like
+            // a closed notepad window
+            if (padViewIsShown()) {
+                showCertificateView();
+            }
+            ui.stackWidget->removeWidget(ui.padWidget);
+            ui.padWidget->deleteLater();
+            ui.padWidget = nullptr;
         }
         updateViewActions();
     }
