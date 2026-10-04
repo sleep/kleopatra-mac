@@ -126,7 +126,7 @@ Q_SIGNALS:
 
 private Q_SLOTS:
 #ifdef Q_OS_MACOS
-    void wrapStyleInProxyStyle();
+    void applyWidgetStyle();
 #endif
     // used as URL handler for URLs with schemes that shall be blocked
     void blockUrl(const QUrl &url);

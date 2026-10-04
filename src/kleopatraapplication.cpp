@@ -82,10 +82,12 @@
 #include <QPointer>
 #include <QProxyStyle>
 #include <QPushButton>
+#include <QStyleFactory>
 #include <QStyleOption>
 #include <QStylePainter>
 #include <QTemporaryDir>
 
+#include <KConfigGroup>
 #include <KSharedConfig>
 
 #ifdef Q_OS_WIN
@@ -365,10 +367,7 @@ KleopatraApplication::KleopatraApplication(int &argc, char *argv[])
     , d(new Private(this))
 {
 #ifdef Q_OS_MACOS
-    // Use Breeze (or the style chosen by the user) instead of the native macOS style so that
-    // Kleopatra looks the same as on the other platforms
-    KStyleManager::initStyle();
-    wrapStyleInProxyStyle();
+    applyWidgetStyle();
 #else
     setStyle(new KleopatraProxyStyle);
 #endif
@@ -378,18 +377,22 @@ KleopatraApplication::KleopatraApplication(int &argc, char *argv[])
 }
 
 #ifdef Q_OS_MACOS
-void KleopatraApplication::wrapStyleInProxyStyle()
+void KleopatraApplication::applyWidgetStyle()
 {
-    // KStyleManager replaces the application style, so the proxy style has to be recreated
-    // with the newly chosen style as base
-    setStyle(new KleopatraProxyStyle{style()->name()});
+    // Use the style chosen by the user in the style menu of KStyleManager. Unlike KStyleManager,
+    // which falls back to Breeze, fall back to the native macOS style.
+    const QString chosenStyle = KConfigGroup(KSharedConfig::openConfig(), u"KDE"_s).readEntry("widgetStyle", QString());
+    const bool useChosenStyle = !chosenStyle.isEmpty() && QStyleFactory::keys().contains(chosenStyle, Qt::CaseInsensitive);
+    setStyle(new KleopatraProxyStyle{useChosenStyle ? chosenStyle : u"macos"_s});
 }
 
 QAction *KleopatraApplication::createConfigureStyleAction(QObject *parent)
 {
     auto action = KStyleManager::createConfigureAction(parent);
     if (action->menu()) {
-        connect(action->menu(), &QMenu::triggered, this, &KleopatraApplication::wrapStyleInProxyStyle);
+        // KStyleManager applies the chosen style itself (with Breeze as fallback for "Default")
+        // and replaces the proxy style; afterwards, apply the style the way Kleopatra does it
+        connect(action->menu(), &QMenu::triggered, this, &KleopatraApplication::applyWidgetStyle);
     }
     return action;
 }

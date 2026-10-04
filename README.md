@@ -15,8 +15,9 @@ and the macOS work lives on the `feat/macos` branch.
 - **Self-contained app:** the app bundle includes GnuPG 2.5 and a Qt based pinentry
   for passphrase prompts, so you don't need Homebrew, MacGPG or GPG Suite. The bundled
   GnuPG uses the standard `~/.gnupg` directory, so existing keys show up as usual.
-- **Same look as on Linux and Windows:** Kleopatra uses KDE's Breeze style by default.
-  You can switch to the native macOS style in Settings > Application Style.
+- **Native look:** Kleopatra uses the native macOS style by default. You can switch to
+  KDE's Breeze style, which Kleopatra uses on Linux and Windows, in Settings >
+  Application Style.
 - **macOS app icon:** the Kleopatra artwork on the rounded macOS icon tile, and proper
   bundle metadata (name, identifier `org.kde.kleopatra`, version).
 - **Notepad in the main window:** an optional setting (Kleopatra menu > Settings >
