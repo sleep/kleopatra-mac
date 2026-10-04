@@ -26,6 +26,7 @@
 #include <QDesktopServices>
 #include <QDialogButtonBox>
 #include <QEvent>
+#include <QKeySequence>
 #include <QLocale>
 #include <QProcess>
 #include <QPushButton>
@@ -88,6 +89,22 @@ void KleoPageConfigDialog::addToolBarToLayout()
     }
     dialogLayout->insertWidget(0, mToolBar);
     updateToolBarWidth();
+
+    // the buttons of the toolbar come first in the tab order, followed by the page and the dialog buttons
+    QWidget *previous = nullptr;
+    const auto actions = mPageActions->actions();
+    for (auto action : actions) {
+        if (auto button = mToolBar->widgetForAction(action)) {
+            if (previous) {
+                setTabOrder(previous, button);
+            }
+            previous = button;
+        }
+    }
+    if (previous) {
+        setTabOrder(previous, pageWidget());
+        setTabOrder(pageWidget(), buttonBox());
+    }
 }
 
 void KleoPageConfigDialog::updateToolBarWidth()
@@ -267,6 +284,15 @@ void KleoPageConfigDialog::addModule(const QString &name, const QString &docPath
     auto action = mToolBar->addAction(Kleo::MacOS::symbolIcon(macOSSymbolName, item->icon()), name);
     action->setCheckable(true);
     action->setActionGroup(mPageActions);
+    // QToolBar creates buttons that cannot be reached with the keyboard
+    if (auto button = mToolBar->widgetForAction(action)) {
+        button->setFocusPolicy(Qt::TabFocus);
+    }
+    // the tab key skips buttons unless keyboard navigation is enabled in the system settings,
+    // so the pages can also be selected with shortcuts
+    if (const int number = mPageActions->actions().size(); number <= 9) {
+        action->setShortcut(QKeySequence{Qt::CTRL | static_cast<Qt::Key>(Qt::Key_0 + number)});
+    }
     connect(action, &QAction::triggered, this, [this, item]() {
         setCurrentPage(item);
         // switching the page may have been canceled
