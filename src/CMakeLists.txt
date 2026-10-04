@@ -9,6 +9,9 @@ if (NOT DISABLE_KWATCHGNUPG)
     add_subdirectory(kwatchgnupg)
 endif()
 add_subdirectory(conf)
+if (APPLE)
+    add_subdirectory(macos)
+endif()
 
 if(WIN32)
   set(_kleopatra_extra_uiserver_SRCS uiserver/uiserver_win.cpp)
@@ -560,7 +563,15 @@ if (NOT KLEOPATRA_ICON_DIR)
 endif()
 file(GLOB ICONS_PNGS "${KLEOPATRA_ICON_DIR}/*.png")
 file(GLOB ICONS_SVGS "${KLEOPATRA_ICON_DIR}/*.svg")
-ecm_add_app_icon(_kleopatra_SRCS ICONS ${ICONS_PNGS} ${ICONS_SVGS})
+if (APPLE AND EXISTS "${KLEOPATRA_ICON_DIR}/macos")
+    # Bundle icon drawn on the macOS icon grid tile. Only the PNGs are passed so
+    # that ECM assembles the .icns with iconutil instead of rendering an SVG
+    # with ksvg2icns.
+    file(GLOB MACOS_ICONS_PNGS "${KLEOPATRA_ICON_DIR}/macos/*.png")
+    ecm_add_app_icon(_kleopatra_SRCS ICONS ${MACOS_ICONS_PNGS} OUTFILE_BASENAME kleopatra)
+else()
+    ecm_add_app_icon(_kleopatra_SRCS ICONS ${ICONS_PNGS} ${ICONS_SVGS})
+endif()
 if (NOT WIN32)
     ecm_install_icons(ICONS ${ICONS_PNGS} ${ICONS_SVGS} DESTINATION ${KDE_INSTALL_ICONDIR})
 else()
@@ -580,6 +591,15 @@ target_link_libraries(kleopatra_bin kcm_kleopatra_static)
 #    set_target_properties(kleopatra_bin PROPERTIES UNITY_BUILD ON)
 #endif()
 set_target_properties(kleopatra_bin PROPERTIES OUTPUT_NAME kleopatra)
+if (APPLE)
+    set_target_properties(kleopatra_bin PROPERTIES
+        MACOSX_BUNDLE_BUNDLE_NAME "Kleopatra"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "org.kde.kleopatra"
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "${kleopatra_version}"
+        MACOSX_BUNDLE_BUNDLE_VERSION "${kleopatra_version}"
+        MACOSX_BUNDLE_LONG_VERSION_STRING "Kleopatra ${KLEOPATRA_VERSION_STRING}"
+    )
+endif()
 
 set(_kleopatra_platform_libs)
 if (WIN32)
