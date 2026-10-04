@@ -425,8 +425,40 @@ public:
     }
 };
 
+#ifdef Q_OS_MACOS
+// The widget style requested with the -style option or with QT_STYLE_OVERRIDE
+Q_GLOBAL_STATIC(QString, requestedStyle)
+
+// Looks for a request for a widget style. This needs to be done before the arguments are
+// passed to Qt because Qt removes the -style option from the arguments.
+static int &lookForRequestedStyle(int &argc, char *argv[])
+{
+    QString style;
+    for (int i = 1; i < argc; ++i) {
+        if (!argv[i]) {
+            continue;
+        }
+        QByteArrayView arg{argv[i]};
+        if (arg.startsWith("--")) {
+            arg = arg.sliced(1);
+        }
+        if (arg.startsWith("-style=")) {
+            style = QString::fromLocal8Bit(arg.sliced(7));
+        } else if (arg == "-style" && i < argc - 1 && argv[i + 1]) {
+            style = QString::fromLocal8Bit(argv[++i]);
+        }
+    }
+    *requestedStyle = style.isEmpty() ? qEnvironmentVariable("QT_STYLE_OVERRIDE") : style;
+    return argc;
+}
+#endif
+
 KleopatraApplication::KleopatraApplication(int &argc, char *argv[])
+#ifdef Q_OS_MACOS
+    : QApplication(lookForRequestedStyle(argc, argv), argv)
+#else
     : QApplication(argc, argv)
+#endif
     , d(new Private(this))
 {
 #ifdef Q_OS_MACOS
@@ -444,11 +476,19 @@ KleopatraApplication::KleopatraApplication(int &argc, char *argv[])
 #ifdef Q_OS_MACOS
 void KleopatraApplication::applyWidgetStyle()
 {
-    // Use the style chosen by the user in the style menu of KStyleManager. Unlike KStyleManager,
-    // which falls back to Breeze, fall back to the native macOS style.
-    const QString chosenStyle = KConfigGroup(KSharedConfig::openConfig(), u"KDE"_s).readEntry("widgetStyle", QString());
-    const bool useChosenStyle = !chosenStyle.isEmpty() && QStyleFactory::keys().contains(chosenStyle, Qt::CaseInsensitive);
-    setStyle(new KleopatraProxyStyle{useChosenStyle ? chosenStyle : u"macos"_s});
+    // Use the style chosen by the user in the style menu. Unlike KStyleManager, which falls back
+    // to Breeze, fall back to the default style, i.e. to the native macOS style or to a style
+    // requested with the -style option or with QT_STYLE_OVERRIDE. Like for KStyleManager, a
+    // requested style takes precedence over the chosen style. Qt ignores requests for styles
+    // that don't exist.
+    QString chosenStyle;
+    if (requestedStyle->isEmpty() || !QStyleFactory::keys().contains(*requestedStyle, Qt::CaseInsensitive)) {
+        chosenStyle = KConfigGroup(KSharedConfig::openConfig(), u"KDE"_s).readEntry("widgetStyle", QString());
+        if (!QStyleFactory::keys().contains(chosenStyle, Qt::CaseInsensitive)) {
+            chosenStyle.clear();
+        }
+    }
+    setStyle(chosenStyle.isEmpty() ? new KleopatraProxyStyle : new KleopatraProxyStyle{chosenStyle});
 }
 
 QAction *KleopatraApplication::createConfigureStyleAction(QObject *parent)
