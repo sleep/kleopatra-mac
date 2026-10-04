@@ -674,7 +674,19 @@ if (APPLE)
         PATHS "${_libkleo_prefix}/etc/xdg" "${KDE_INSTALL_FULL_CONFDIR}"
         NO_DEFAULT_PATH
     )
-    if (LIBKLEOPATRARC_FILE)
+    find_program(PERL_EXECUTABLE perl)
+    if (LIBKLEOPATRARC_FILE AND PERL_EXECUTABLE)
+        # use checksum tools that exist on all supported versions of macOS
+        set(_adapted_libkleopatrarc "${CMAKE_CURRENT_BINARY_DIR}/macos/libkleopatrarc")
+        add_custom_command(
+            OUTPUT "${_adapted_libkleopatrarc}"
+            COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/macos"
+            COMMAND "${PERL_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/macos/adapt-libkleopatrarc.pl" "${LIBKLEOPATRARC_FILE}" "${_adapted_libkleopatrarc}"
+            DEPENDS "${LIBKLEOPATRARC_FILE}" "${CMAKE_CURRENT_SOURCE_DIR}/macos/adapt-libkleopatrarc.pl"
+            VERBATIM
+        )
+        list(APPEND _default_config_files "${_adapted_libkleopatrarc}")
+    elseif (LIBKLEOPATRARC_FILE)
         list(APPEND _default_config_files "${LIBKLEOPATRARC_FILE}")
     else()
         message(WARNING "libkleopatrarc of Libkleo not found. Kleopatra will lack the default archive, checksum and key filter definitions.")
