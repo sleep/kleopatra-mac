@@ -71,6 +71,7 @@
 #define HAVE_WAYLAND
 #endif
 
+#include <QActionGroup>
 #include <QDesktopServices>
 #include <QDir>
 #include <QFile>
@@ -494,9 +495,28 @@ void KleopatraApplication::applyWidgetStyle()
 QAction *KleopatraApplication::createConfigureStyleAction(QObject *parent)
 {
     auto action = KStyleManager::createConfigureAction(parent);
-    if (action->menu()) {
-        // KStyleManager applies the chosen style itself (with Breeze as fallback for "Default")
-        // and replaces the proxy style; afterwards, apply the style the way Kleopatra does it
+    if (!action->menu()) {
+        // there is no style menu if a style was requested explicitly
+        return action;
+    }
+    const auto styleActions = action->menu()->actions();
+    if (auto group = styleActions.empty() ? nullptr : styleActions.front()->actionGroup()) {
+        // KStyleManager would apply the chosen style (or Breeze for "Default") without the proxy
+        // style. Therefore, Kleopatra takes over and stores and applies the chosen style itself.
+        disconnect(group, &QActionGroup::triggered, group, nullptr);
+        connect(group, &QActionGroup::triggered, this, [this](QAction *styleAction) {
+            const QString chosenStyle = styleAction->data().toString();
+            KConfigGroup config{KSharedConfig::openConfig(), u"KDE"_s};
+            if (chosenStyle.isEmpty()) {
+                config.deleteEntry("widgetStyle");
+            } else {
+                config.writeEntry("widgetStyle", chosenStyle);
+            }
+            config.sync();
+            applyWidgetStyle();
+        });
+    } else {
+        // KStyleManager has applied the chosen style without the proxy style
         connect(action->menu(), &QMenu::triggered, this, &KleopatraApplication::applyWidgetStyle);
     }
     return action;
