@@ -654,6 +654,13 @@ install(
   DESTINATION ${KDE_INSTALL_DATADIR}/kio/servicemenus
 )
 
+if (APPLE AND EXISTS "${KLEOPATRA_ICON_DIR}/macos/256-apps-kleopatra.png")
+    # The logo for the About dialog. It's taken from the resources because the application
+    # has no window icon on macOS and the icon isn't in an icon theme in the app bundle.
+    set_source_files_properties("${KLEOPATRA_ICON_DIR}/macos/256-apps-kleopatra.png" PROPERTIES QT_RESOURCE_ALIAS "kleopatra.png")
+    qt_add_resources(kleopatra_bin "macos_app_logo" PREFIX "/icons/macos" FILES "${KLEOPATRA_ICON_DIR}/macos/256-apps-kleopatra.png")
+endif()
+
 install(FILES kleopatradebugcommandsrc DESTINATION ${KDE_INSTALL_CONFDIR})
 if (APPLE)
     # On macOS, KConfig looks for config files only in the preferences folder of the user,

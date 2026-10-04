@@ -62,6 +62,7 @@
 #include <QDir>
 #include <QElapsedTimer>
 #include <QEventLoop>
+#include <QIcon>
 #include <QMessageBox>
 #include <QSettings>
 #include <QThreadPool>
@@ -320,6 +321,10 @@ int main(int argc, char **argv)
     }
 
     AboutData aboutData;
+#ifdef Q_OS_MACOS
+    // the About dialog falls back to the window icon of the application, which isn't set on macOS
+    aboutData.setProgramLogo(QIcon{u":/icons/macos/kleopatra.png"_s});
+#endif
     KAboutData::setApplicationData(aboutData);
 
     KCrash::initialize();
