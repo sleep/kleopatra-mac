@@ -387,6 +387,24 @@ public:
         QProxyStyle::drawPrimitive(element, option, painter, widget);
     }
 
+    QRect subControlRect(ComplexControl control, const QStyleOptionComplex *option, SubControl subControl, const QWidget *widget = nullptr) const override
+    {
+        QRect rect = QProxyStyle::subControlRect(control, option, subControl, widget);
+        // The macOS style puts the contents of a flat group box partly over its title. This isn't
+        // noticed as long as the group box uses the margins calculated before it was made flat,
+        // but QGroupBox recalculates the margins when the style or the font changes.
+        if (control == CC_GroupBox && subControl == SC_GroupBoxContents) {
+            if (auto groupBoxOption = qstyleoption_cast<const QStyleOptionGroupBox *>(option);
+                groupBoxOption && (groupBoxOption->features & QStyleOptionFrame::Flat) && !groupBoxOption->text.isEmpty()) {
+                const QRect labelRect = QProxyStyle::subControlRect(control, option, SC_GroupBoxLabel, widget);
+                if (rect.top() < labelRect.bottom() + 3) {
+                    rect.setTop(labelRect.bottom() + 3);
+                }
+            }
+        }
+        return rect;
+    }
+
     static bool hasTextAndIcon(const QStyleOptionButton &option)
     {
         return !option.text.isEmpty() && !option.icon.isNull();
