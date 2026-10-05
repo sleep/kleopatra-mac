@@ -47,6 +47,9 @@
 #include <KColorScheme>
 #include <KColorSchemeManager>
 #include <KColorSchemeMenu>
+#ifdef Q_OS_MACOS
+#include <KColorSchemeModel>
+#endif
 #include <KConfigDialog>
 #include <KConfigGroup>
 #include <KEditToolBar>
@@ -73,12 +76,19 @@
 #include <QMenu>
 #include <QMimeData>
 #include <QPixmap>
+#include <QPointer>
 #include <QProcess>
 #include <QSettings>
 #include <QStackedWidget>
 #include <QStatusBar>
+#include <QStyleHints>
 #include <QTimer>
 #include <QVBoxLayout>
+#include <QWidgetAction>
+
+#ifdef Q_OS_MACOS
+#include "macos/macosstyle.h"
+#endif
 
 #include <Libkleo/Classify>
 #include <Libkleo/Compliance>
@@ -152,6 +162,17 @@ public:
         }
     }
 
+#ifdef Q_OS_MACOS
+    // Puts the search bar back above the certificate list after it was shown in the toolbar
+    void takeBackSearchBar()
+    {
+        ui.searchBar->setCompactLayout(false);
+        static_cast<QVBoxLayout *>(layout())->insertWidget(0, ui.searchBar);
+        ui.searchBar->setTabOrderAfter(this);
+        ui.searchBar->show();
+    }
+#endif
+
 private:
     struct UI {
         TabWidget *tabWidget = nullptr;
@@ -171,6 +192,125 @@ private:
     } ui;
 };
 
+#ifdef Q_OS_MACOS
+// The toolbar item of the search field. It shows the search bar of the certificate view
+// as long as there is room for it in the toolbar. The search bar is only a guest: it's
+// handed back to the certificate view before the item is destroyed with its toolbar.
+class SearchFieldHost : public QWidget
+{
+    Q_OBJECT
+public:
+    explicit SearchFieldHost(CertificateView *view, QWidget *parent = nullptr)
+        : QWidget{parent}
+        , view{view}
+    {
+        auto layout = new QHBoxLayout{this};
+        layout->setContentsMargins({});
+        // keeps the search field and its focus ring off the edge of the window
+        layout->addSpacing(8);
+        setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    }
+
+    ~SearchFieldHost() override
+    {
+        if (hasSearchBar()) {
+            view->takeBackSearchBar();
+        }
+    }
+
+    bool hasSearchBar() const
+    {
+        return view && view->searchBar()->parentWidget() == this;
+    }
+
+    void takeSearchBar()
+    {
+        auto searchBar = view->searchBar();
+        setMinimumWidth(0);
+        searchBar->setCompactLayout(true);
+        static_cast<QHBoxLayout *>(layout())->insertWidget(0, searchBar);
+        searchBar->setTabOrderAfter(this);
+        searchBar->show();
+    }
+
+    // Keeps requesting the space for the search bar after it left. This way the toolbar
+    // shows the item again only if the search bar fits.
+    void reserveSpace()
+    {
+        setMinimumWidth(minimumSizeHint().width());
+    }
+
+Q_SIGNALS:
+    void visibilityChanged();
+
+protected:
+    bool event(QEvent *e) override
+    {
+        switch (e->type()) {
+        case QEvent::ShowToParent:
+            // KXMLGUI makes all toolbar items focusable, but only the widgets of the search
+            // bar shall get the keyboard focus
+            setFocusPolicy(Qt::NoFocus);
+            [[fallthrough]];
+        case QEvent::Show:
+        case QEvent::Hide:
+        case QEvent::HideToParent:
+            Q_EMIT visibilityChanged();
+            break;
+        default:
+            break;
+        }
+        return QWidget::event(e);
+    }
+
+private:
+    const QPointer<CertificateView> view;
+};
+
+class SearchFieldAction : public QWidgetAction
+{
+    Q_OBJECT
+public:
+    explicit SearchFieldAction(CertificateView *view, QObject *parent = nullptr)
+        : QWidgetAction{parent}
+        , view{view}
+    {
+    }
+
+    // Returns the toolbar item in \p window that can show the search bar, i.e. an item that
+    // is neither hidden with its toolbar nor hidden because it doesn't fit in the toolbar
+    SearchFieldHost *usableHost(const QWidget *window) const
+    {
+        const auto hosts = createdWidgets();
+        for (auto host : hosts) {
+            if (window->isAncestorOf(host) && host->isVisibleTo(window)) {
+                return static_cast<SearchFieldHost *>(host);
+            }
+        }
+        return nullptr;
+    }
+
+Q_SIGNALS:
+    void hostsChanged();
+
+protected:
+    QWidget *createWidget(QWidget *parent) override
+    {
+        // there is only one search bar; it isn't shown in menus like the menu of the
+        // toolbar extension
+        if (!qobject_cast<QToolBar *>(parent)) {
+            return nullptr;
+        }
+        auto host = new SearchFieldHost{view, parent};
+        host->setEnabled(isEnabled());
+        connect(host, &SearchFieldHost::visibilityChanged, this, &SearchFieldAction::hostsChanged);
+        return host;
+    }
+
+private:
+    CertificateView *const view;
+};
+#endif
 }
 
 class MainWindow::Private
@@ -236,6 +376,11 @@ public:
     {
         KEditToolBar dlg(q->factory());
         dlg.exec();
+#ifdef Q_OS_MACOS
+        // the toolbar may have been rebuilt
+        setUpMacOSToolBar();
+        updateSearchBarPlacement();
+#endif
     }
     void editKeybindings()
     {
@@ -334,6 +479,16 @@ public:
 
     void slotFocusQuickSearch()
     {
+        if (padViewIsShown()) {
+            showCertificateView();
+        }
+        if (ui.stackWidget->currentWidget() != ui.searchTab) {
+            // there's nothing to search
+            return;
+        }
+#ifdef Q_OS_MACOS
+        updateSearchBarPlacement();
+#endif
         ui.searchTab->searchBar()->lineEdit()->setFocus();
     }
 
@@ -385,6 +540,10 @@ public:
         if (auto action = q->actionCollection()->action(u"pad_view"_s)) {
             action->setChecked(padShown);
         }
+        // the search field in the toolbar is only useful for the certificate list
+        if (auto action = q->actionCollection()->action(u"search_field"_s)) {
+            action->setEnabled(ui.stackWidget->currentWidget() == ui.searchTab);
+        }
     }
 
     void applyNotepadSetting()
@@ -396,11 +555,138 @@ public:
         if (auto action = q->actionCollection()->action(u"pad_view"_s)) {
             action->setCheckable(inMainWindow);
         }
-        if (!inMainWindow && padViewIsShown()) {
-            showCertificateView();
+        if (!inMainWindow && ui.padWidget) {
+            // the notepad in the main window can't be reached anymore; discard it like
+            // a closed notepad window
+            if (padViewIsShown()) {
+                showCertificateView();
+            }
+            ui.stackWidget->removeWidget(ui.padWidget);
+            ui.padWidget->deleteLater();
+            ui.padWidget = nullptr;
         }
         updateViewActions();
     }
+
+#ifdef Q_OS_MACOS
+    // Creates the toolbar item for the search field, so that the search bar of the
+    // certificate view can be shown in the toolbar like the search fields of macOS applications
+    QWidgetAction *createSearchFieldAction()
+    {
+        ui.searchTab->searchBar()->lineEdit()->addAction(Kleo::MacOS::symbolIcon(u"magnifyingglass"_s), QLineEdit::LeadingPosition);
+
+        searchFieldAction = new SearchFieldAction{ui.searchTab, q};
+        searchFieldAction->setText(i18nc("@action:intoolbar", "Search"));
+        // moving the search bar changes the layout of the toolbar; therefore, this isn't done
+        // while the toolbar is busy showing or hiding its items
+        connect(
+            searchFieldAction,
+            &SearchFieldAction::hostsChanged,
+            q,
+            [this]() {
+                updateSearchBarPlacement();
+            },
+            Qt::QueuedConnection);
+        return searchFieldAction;
+    }
+
+    // Shows the search bar in the toolbar if its toolbar item is visible. Otherwise, e.g. if
+    // the toolbar is hidden, if the item doesn't fit in the toolbar, or if it was removed from
+    // the toolbar, the search bar is shown above the certificate list.
+    void updateSearchBarPlacement()
+    {
+        if (updatingSearchBarPlacement) {
+            return;
+        }
+        auto searchBar = ui.searchTab->searchBar();
+        const auto host = searchFieldAction->usableHost(q);
+        const auto currentParent = searchBar->parentWidget();
+        if (currentParent == (host ? static_cast<QWidget *>(host) : ui.searchTab)) {
+            return;
+        }
+        updatingSearchBarPlacement = true;
+        // reparenting takes the focus away
+        const QPointer<QWidget> focusWidget = q->focusWidget();
+        const bool restoreFocus = focusWidget && searchBar->isAncestorOf(focusWidget);
+        if (auto oldHost = qobject_cast<SearchFieldHost *>(currentParent)) {
+            oldHost->reserveSpace();
+        }
+        if (host) {
+            host->takeSearchBar();
+        } else {
+            ui.searchTab->takeBackSearchBar();
+        }
+        if (restoreFocus && focusWidget) {
+            focusWidget->setFocus();
+        }
+        updatingSearchBarPlacement = false;
+    }
+
+    // Makes the color scheme and the appearance of the application fit the widget style
+    void updateColorScheme()
+    {
+        if (updatingColorScheme) {
+            return;
+        }
+        updatingColorScheme = true;
+        auto manager = KColorSchemeManager::instance();
+        // The native style follows the appearance of the system. A color scheme would only change
+        // the colors of some parts of the user interface. Therefore, color schemes are only
+        // offered for other styles. The color scheme chosen for other styles is kept in the
+        // configuration, so that it's used again when the user switches back to another style.
+        const bool nativeStyle = Kleo::MacOS::isNativeStyleActive();
+        colorSchemeMenu->menuAction()->setVisible(!nativeStyle);
+        QString schemeId;
+        if (!nativeStyle) {
+            schemeId = KConfigGroup(KSharedConfig::openConfig(), u"UiSettings"_s).readEntry("ColorScheme", QString{});
+            if (!manager->indexForSchemeId(schemeId).isValid()) {
+                schemeId.clear();
+            }
+        }
+        manager->setAutosaveChanges(false);
+        if (schemeId.isEmpty()) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+            qApp->styleHints()->unsetColorScheme();
+#endif
+            // KColorSchemeManager uses the default palette instead of the color scheme matching
+            // the appearance of the system if a color scheme has been activated before
+            qApp->setProperty("KDE_COLOR_SCHEME_PATH", QVariant{});
+            manager->activateSchemeId(QString{});
+        } else {
+            if (manager->activeSchemeId() != schemeId) {
+                manager->activateSchemeId(schemeId);
+            }
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+            // make the parts of the user interface that are drawn by the system, e.g. the title
+            // bar, match the color scheme
+            const bool isDark = qApp->palette().color(QPalette::Window).lightness() < 128;
+            qApp->styleHints()->setColorScheme(isDark ? Qt::ColorScheme::Dark : Qt::ColorScheme::Light);
+#endif
+        }
+        manager->setAutosaveChanges(true);
+        // make sure that the active color scheme is checked in the menu
+        const QString schemePath = manager->indexForSchemeId(manager->activeSchemeId()).data(KColorSchemeModel::PathRole).toString();
+        const auto schemeActions = colorSchemeMenu->actions();
+        for (auto action : schemeActions) {
+            if (action->data().toString() == schemePath) {
+                action->setChecked(true);
+            }
+        }
+        updatingColorScheme = false;
+    }
+
+    void setUpMacOSToolBar()
+    {
+        q->setUnifiedTitleAndToolBarOnMac(true);
+        if (auto toolBar = q->toolBar(u"mainToolBar"_s)) {
+            toolBar->setMovable(false);
+            const auto actions = toolBar->actions();
+            for (auto action : actions) {
+                action->setIcon(Kleo::MacOS::symbolIconFor(action->icon()));
+            }
+        }
+    }
+#endif
 
     void restartDaemons()
     {
@@ -453,6 +739,12 @@ private:
     } ui;
     QAction *focusToClickSearchAction = nullptr;
     ClipboardMenu *clipboadMenu = nullptr;
+#ifdef Q_OS_MACOS
+    SearchFieldAction *searchFieldAction = nullptr;
+    bool updatingSearchBarPlacement = false;
+    QMenu *colorSchemeMenu = nullptr;
+    bool updatingColorScheme = false;
+#endif
 };
 
 MainWindow::Private::UI::UI(MainWindow *q)
@@ -522,6 +814,10 @@ MainWindow::Private::Private(MainWindow *qq)
         connect(helpMenu, &KHelpMenu::showAboutApplication, KleopatraApplication::instance(), &KleopatraApplication::showAboutDialog);
     }
 
+#ifdef Q_OS_MACOS
+    setUpMacOSToolBar();
+#endif
+
     // make toolbar buttons accessible by keyboard
     auto toolbar = q->findChild<KToolBar *>();
     if (toolbar) {
@@ -545,7 +841,15 @@ MainWindow::Private::Private(MainWindow *qq)
     q->setAcceptDrops(true);
 
     // set default window size
+#ifdef Q_OS_MACOS
+    // start with the search bar in the toolbar, so that the default size has room for it
+    if (auto host = q->findChild<SearchFieldHost *>()) {
+        host->takeSearchBar();
+    }
+    q->resize(QSize(qMax(1024, q->sizeHint().width()), 500));
+#else
     q->resize(QSize(1024, 500));
+#endif
     q->setAutoSaveSettings();
 
     updateSearchBarClickMessage();
@@ -744,7 +1048,25 @@ void MainWindow::Private::setupActions()
     KActionMenu *schemeMenu = KColorSchemeMenu::createMenu(manager, q);
     coll->addAction(QStringLiteral("colorscheme_menu"), schemeMenu->menu()->menuAction());
 #ifdef Q_OS_MACOS
+    colorSchemeMenu = schemeMenu->menu();
+    updateColorScheme();
+    connect(KleopatraApplication::instance(), &KleopatraApplication::widgetStyleChanged, q, [this]() {
+        updateColorScheme();
+    });
+    // the following connections are made after KColorSchemeManager and KColorSchemeMenu made
+    // theirs, so that the color scheme is updated after they have reacted
+    connect(qApp->styleHints(), &QStyleHints::colorSchemeChanged, q, [this]() {
+        updateColorScheme();
+    });
+    const auto schemeActions = colorSchemeMenu->actions();
+    if (auto group = schemeActions.empty() ? nullptr : schemeActions.front()->actionGroup()) {
+        connect(group, &QActionGroup::triggered, q, [this]() {
+            updateColorScheme();
+        });
+    }
     coll->addAction(u"configure_style"_s, KleopatraApplication::instance()->createConfigureStyleAction(q));
+    // the toolbar item of the search field can't be triggered
+    KActionCollection::setShortcutsConfigurable(coll->addAction(u"search_field"_s, createSearchFieldAction()), false);
 #endif
 
     focusToClickSearchAction = new QAction(i18nc("@action", "Set Focus to Quick Search"), q);
@@ -944,6 +1266,9 @@ bool MainWindow::queryClose()
 void MainWindow::showEvent(QShowEvent *e)
 {
     KXmlGuiWindow::showEvent(e);
+#ifdef Q_OS_MACOS
+    d->updateSearchBarPlacement();
+#endif
     if (d->firstShow) {
         d->ui.searchTab->tabWidget()->loadViews(KSharedConfig::openStateConfig(), QStringLiteral("KeyList"));
         d->firstShow = false;

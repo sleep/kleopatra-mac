@@ -31,7 +31,9 @@
 ConfigureDialog::ConfigureDialog(QWidget *parent)
     : KleoPageConfigDialog(parent)
 {
+#ifndef Q_OS_MACOS
     setFaceType(KPageDialog::List);
+#endif
     setWindowTitle(i18nc("@title:window", "Configure"));
 
     const auto settings = Kleo::Settings{};
@@ -39,42 +41,51 @@ ConfigureDialog::ConfigureDialog(QWidget *parent)
         addModule(i18n("Directory Services"),
                   QStringLiteral("kleopatra/configuration.html#configuration-directory-services"),
                   QStringLiteral("view-certificate-server-configure"),
-                  new DirectoryServicesConfigurationPage(this));
+                  new DirectoryServicesConfigurationPage(this),
+                  QStringLiteral("server.rack"));
     }
     if (settings.showAppearanceConfiguration()) {
         addModule(i18n("Appearance"),
                   QStringLiteral("kleopatra/configuration-appearance.html"),
                   QStringLiteral("applications-graphics"),
-                  new Kleo::Config::AppearanceConfigurationPage(this));
+                  new Kleo::Config::AppearanceConfigurationPage(this),
+                  QStringLiteral("paintbrush"));
     }
     if (settings.showCryptoOperationsConfiguration()) {
         addModule(i18n("Crypto Operations"),
                   QStringLiteral("kleopatra/configuration-cryptooperations.html"),
                   QStringLiteral("document-encrypt"),
-                  new Kleo::Config::CryptoOperationsConfigurationPage(this));
+                  new Kleo::Config::CryptoOperationsConfigurationPage(this),
+                  QStringLiteral("lock.shield"));
     }
     if (settings.showSMimeValidationConfiguration() && settings.cmsEnabled()) {
         addModule(i18n("S/MIME Validation"),
                   QStringLiteral("kleopatra/configuration.html#configuration-smime-validation"),
                   QStringLiteral("applications-network"),
-                  new Kleo::Config::SMimeValidationConfigurationPage(this));
+                  new Kleo::Config::SMimeValidationConfigurationPage(this),
+                  QStringLiteral("checkmark.shield"));
     }
     if (settings.showSmartCardsConfiguration()) {
         addModule(i18n("Smart Cards"),
                   QStringLiteral("kleopatra/configuration.html"),
                   QStringLiteral("auth-sim-locked"),
-                  new Kleo::Config::SmartCardConfigurationPage{this});
+                  new Kleo::Config::SmartCardConfigurationPage{this},
+                  QStringLiteral("creditcard"));
     }
     if (settings.showGnuPGSystemConfiguration()) {
         addModule(i18n("GnuPG System"),
                   QStringLiteral("kleopatra/configuration.html#configuration-gnupgsystem"),
                   QStringLiteral("document-encrypt"),
-                  new Kleo::Config::GnuPGSystemConfigurationPage(this));
+                  new Kleo::Config::GnuPGSystemConfigurationPage(this),
+                  QStringLiteral("gearshape.2"));
     }
 
+#ifndef Q_OS_MACOS
+    // the list of the pages only exists with the List face
     if (auto moduleListView = findChild<QListView *>()) {
         moduleListView->setAccessibleName(i18nc("@label", "Settings"));
     }
+#endif
 
     initButtons();
 

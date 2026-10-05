@@ -45,6 +45,10 @@ InfoField::InfoField(const QString &label, QWidget *parent)
 #endif
     mLayout->addWidget(mValue);
     mButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    // The macOS style insets push buttons in layouts by their layout item margins, and
+    // box layouts reserve room for these margins even if the button is hidden. Without them
+    // the row of a hidden field in a grid layout takes no space.
+    mButton->setAttribute(Qt::WA_LayoutUsesWidgetRect);
     mButton->setVisible(false);
     mLayout->addWidget(mButton);
     mLayout->addStretch();

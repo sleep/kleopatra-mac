@@ -32,6 +32,19 @@ public:
     void updateClickMessage(const QString &shortcutStr);
     void addCustomKeyFilter(const std::shared_ptr<KeyFilter> &keyFilter);
 
+    /**
+     * Switches between the normal layout, where the search field takes all available space,
+     * and a compact layout for toolbars: the category filter comes first and the search field
+     * has a limited width that doesn't depend on its content.
+     */
+    void setCompactLayout(bool compact);
+
+    /**
+     * Moves the child widgets behind \p widget in the tab order. Needs to be called after
+     * the search bar was moved to another parent widget.
+     */
+    void setTabOrderAfter(QWidget *widget);
+
 public Q_SLOTS:
     void setStringFilter(const QString &text);
     void setKeyFilter(const std::shared_ptr<Kleo::KeyFilter> &filter);

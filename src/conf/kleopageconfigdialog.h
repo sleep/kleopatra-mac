@@ -9,9 +9,13 @@
 #pragma once
 
 #include <KPageDialog>
+#include <QHash>
 #include <QList>
 
 class KPageWidgetItem;
+class QAction;
+class QActionGroup;
+class QToolBar;
 
 namespace Kleo
 {
@@ -30,7 +34,9 @@ class KleoPageConfigDialog : public KPageDialog
 public:
     explicit KleoPageConfigDialog(QWidget *parent = nullptr);
 
-    void addModule(const QString &name, const QString &docPath, const QString &icon, Kleo::Config::KleoConfigModule *module);
+    // macOSSymbolName is the SF Symbol shown for the module in the toolbar on macOS
+    void
+    addModule(const QString &name, const QString &docPath, const QString &icon, Kleo::Config::KleoConfigModule *module, const QString &macOSSymbolName = {});
 
 Q_SIGNALS:
     void configCommitted();
@@ -46,6 +52,10 @@ protected Q_SLOTS:
 
 protected:
     void initButtons();
+#ifdef Q_OS_MACOS
+    void showEvent(QShowEvent *event) override;
+    void changeEvent(QEvent *event) override;
+#endif
 
 private:
     void clientChanged();
@@ -53,4 +63,13 @@ private:
 
     QSet<Kleo::Config::KleoConfigModule *> mChangedModules;
     QMap<QString, QString> mHelpUrls;
+#ifdef Q_OS_MACOS
+    // like the settings windows of macOS applications, the pages are selected with a toolbar
+    void updateToolBar();
+    void addToolBarToLayout();
+    void updateToolBarWidth();
+    QToolBar *mToolBar = nullptr;
+    QActionGroup *mPageActions = nullptr;
+    QHash<KPageWidgetItem *, QAction *> mPageActionForItem;
+#endif
 };

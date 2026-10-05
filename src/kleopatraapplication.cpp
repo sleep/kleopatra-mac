@@ -57,6 +57,9 @@
 #ifdef Q_OS_WIN
 #include <utils/winapi-helpers.h>
 #endif
+#ifdef Q_OS_MACOS
+#include "macos/macosstyle.h"
+#endif
 
 #include "kleopatra_debug.h"
 #include <KAboutApplicationDialog>
@@ -71,6 +74,8 @@
 #define HAVE_WAYLAND
 #endif
 
+#include <QActionEvent>
+#include <QActionGroup>
 #include <QDesktopServices>
 #include <QDir>
 #include <QFile>
@@ -82,10 +87,13 @@
 #include <QPointer>
 #include <QProxyStyle>
 #include <QPushButton>
+#include <QStyleFactory>
 #include <QStyleOption>
 #include <QStylePainter>
 #include <QTemporaryDir>
+#include <QToolButton>
 
+#include <KConfigGroup>
 #include <KSharedConfig>
 
 #ifdef Q_OS_WIN
@@ -346,12 +354,175 @@ public:
         return QProxyStyle::styleHint(hint, option, widget, returnData);
     }
 
+#ifdef Q_OS_MACOS
+    // Returns whether the native style of macOS is used. The look of macOS applications is only
+    // imitated together with this style, so that other styles look like on other platforms.
+    bool isMacStyle() const
+    {
+        return baseStyle()->inherits("QMacStyle");
+    }
+
+    // push buttons of macOS applications show only their text, so icons are left out of
+    // buttons that have a text
+    void drawControl(ControlElement element, const QStyleOption *option, QPainter *painter, const QWidget *widget = nullptr) const override
+    {
+        if ((element == CE_PushButton || element == CE_PushButtonLabel) && isMacStyle()) {
+            if (auto buttonOption = qstyleoption_cast<const QStyleOptionButton *>(option); buttonOption && hasTextAndIcon(*buttonOption)) {
+                QStyleOptionButton optionWithoutIcon{*buttonOption};
+                optionWithoutIcon.icon = {};
+                QProxyStyle::drawControl(element, &optionWithoutIcon, painter, widget);
+                return;
+            }
+        }
+        QProxyStyle::drawControl(element, option, painter, widget);
+    }
+
+    QSize sizeFromContents(ContentsType type, const QStyleOption *option, const QSize &contentsSize, const QWidget *widget = nullptr) const override
+    {
+        if (type == CT_ToolButton && isPushButtonLikeToolButton(widget)) {
+            if (auto toolButtonOption = qstyleoption_cast<const QStyleOptionToolButton *>(option)) {
+                // like QPushButton calculates the size of its contents
+                const QStyleOptionButton buttonOption = pushButtonOption(*toolButtonOption);
+                QSize textSize = buttonOption.fontMetrics.size(Qt::TextShowMnemonic, buttonOption.text);
+                if (buttonOption.features & QStyleOptionButton::HasMenu) {
+                    textSize.rwidth() += pixelMetric(PM_MenuButtonIndicator, &buttonOption, widget);
+                }
+                return QProxyStyle::sizeFromContents(CT_PushButton, &buttonOption, textSize, widget);
+            }
+        }
+        if (type == CT_PushButton && isMacStyle()) {
+            if (auto buttonOption = qstyleoption_cast<const QStyleOptionButton *>(option); buttonOption && hasTextAndIcon(*buttonOption)) {
+                // QPushButton adds the space for the icon to the size of the contents
+                const QSize sizeWithoutIcon{contentsSize.width() - buttonOption->iconSize.width() - 4, contentsSize.height()};
+                QStyleOptionButton optionWithoutIcon{*buttonOption};
+                optionWithoutIcon.icon = {};
+                return QProxyStyle::sizeFromContents(type, &optionWithoutIcon, sizeWithoutIcon, widget);
+            }
+        }
+        return QProxyStyle::sizeFromContents(type, option, contentsSize, widget);
+    }
+
+    void drawPrimitive(PrimitiveElement element, const QStyleOption *option, QPainter *painter, const QWidget *widget = nullptr) const override
+    {
+        // toolbars of macOS applications use spacing instead of separator lines
+        if (element == PE_IndicatorToolBarSeparator && isMacStyle()) {
+            return;
+        }
+        QProxyStyle::drawPrimitive(element, option, painter, widget);
+    }
+
+    void drawComplexControl(ComplexControl control, const QStyleOptionComplex *option, QPainter *painter, const QWidget *widget = nullptr) const override
+    {
+        if (control == CC_ToolButton && isPushButtonLikeToolButton(widget)) {
+            if (auto toolButtonOption = qstyleoption_cast<const QStyleOptionToolButton *>(option)) {
+                const QStyleOptionButton buttonOption = pushButtonOption(*toolButtonOption);
+                painter->save();
+                painter->setFont(QApplication::font("QPushButton"));
+                QProxyStyle::drawControl(CE_PushButton, &buttonOption, painter, widget);
+                painter->restore();
+                return;
+            }
+        }
+        QProxyStyle::drawComplexControl(control, option, painter, widget);
+    }
+
+    QRect subElementRect(SubElement element, const QStyleOption *option, const QWidget *widget = nullptr) const override
+    {
+        if (element == SE_ToolButtonLayoutItem && option && isPushButtonLikeToolButton(widget)) {
+            QStyleOptionButton buttonOption;
+            buttonOption.rect = option->rect;
+            buttonOption.state = option->state;
+            buttonOption.direction = option->direction;
+            return QProxyStyle::subElementRect(SE_PushButtonLayoutItem, &buttonOption, widget);
+        }
+        return QProxyStyle::subElementRect(element, option, widget);
+    }
+
+    QRect subControlRect(ComplexControl control, const QStyleOptionComplex *option, SubControl subControl, const QWidget *widget = nullptr) const override
+    {
+        QRect rect = QProxyStyle::subControlRect(control, option, subControl, widget);
+        // The macOS style puts the contents of a flat group box partly over its title. This isn't
+        // noticed as long as the group box uses the margins calculated before it was made flat,
+        // but QGroupBox recalculates the margins when the style or the font changes.
+        if (control == CC_GroupBox && subControl == SC_GroupBoxContents) {
+            if (auto groupBoxOption = qstyleoption_cast<const QStyleOptionGroupBox *>(option);
+                groupBoxOption && (groupBoxOption->features & QStyleOptionFrame::Flat) && !groupBoxOption->text.isEmpty()) {
+                const QRect labelRect = QProxyStyle::subControlRect(control, option, SC_GroupBoxLabel, widget);
+                if (rect.top() < labelRect.bottom() + 3) {
+                    rect.setTop(labelRect.bottom() + 3);
+                }
+            }
+        }
+        return rect;
+    }
+
+    static bool hasTextAndIcon(const QStyleOptionButton &option)
+    {
+        return !option.text.isEmpty() && !option.icon.isNull();
+    }
+
+    // Returns whether a tool button is used like a push button, i.e. it's a button with a text
+    // that isn't part of a toolbar or of another widget. The macOS style draws tool buttons as
+    // small square buttons which look out of place next to push buttons. Therefore, such tool
+    // buttons are drawn like push buttons.
+    bool isPushButtonLikeToolButton(const QWidget *widget) const
+    {
+        const auto button = qobject_cast<const QToolButton *>(widget);
+        if (!button || !isMacStyle() || button->autoRaise() || button->text().isEmpty()) {
+            return false;
+        }
+        if (button->toolButtonStyle() != Qt::ToolButtonTextOnly && button->toolButtonStyle() != Qt::ToolButtonTextBesideIcon) {
+            return false;
+        }
+        for (auto parent = button->parentWidget(); parent; parent = parent->parentWidget()) {
+            if (parent->inherits("QToolBar") || parent->inherits("QTabBar") || parent->inherits("QTabWidget") || parent->inherits("QAbstractItemView")
+                || parent->inherits("KMessageWidget")) {
+                return false;
+            }
+            if (parent->isWindow()) {
+                break;
+            }
+        }
+        return true;
+    }
+
+    // Returns the option for drawing a tool button as push button without icon
+    static QStyleOptionButton pushButtonOption(const QStyleOptionToolButton &option)
+    {
+        QStyleOptionButton buttonOption;
+        buttonOption.rect = option.rect;
+        buttonOption.state = option.state;
+        if (!(buttonOption.state & (State_Sunken | State_On))) {
+            buttonOption.state |= State_Raised;
+        }
+        buttonOption.direction = option.direction;
+        buttonOption.palette = option.palette;
+        buttonOption.styleObject = option.styleObject;
+        // tool buttons have a smaller font than push buttons
+        buttonOption.fontMetrics = QFontMetrics{QApplication::font("QPushButton")};
+        buttonOption.text = option.text;
+        if (option.features & (QStyleOptionToolButton::HasMenu | QStyleOptionToolButton::MenuButtonPopup)) {
+            buttonOption.features |= QStyleOptionButton::HasMenu;
+        }
+        return buttonOption;
+    }
+#endif
+
     void polish(QWidget *widget) override
     {
         auto pushButton = qobject_cast<QPushButton *>(widget);
         const bool wasAutoDefault = pushButton ? pushButton->autoDefault() : false;
 
         QProxyStyle::polish(widget);
+
+#ifdef Q_OS_MACOS
+        if (isPushButtonLikeToolButton(widget)) {
+            // QToolButton looks up its layout margins when it's created, i.e. before it's known
+            // how it is used; make it look them up again
+            QEvent event{QEvent::MacSizeChange};
+            QCoreApplication::sendEvent(widget, &event);
+        }
+#endif
 
         if (pushButton && wasAutoDefault && pushButton->autoDefault() != wasAutoDefault) {
             // the style (Breeze?) messed with the autoDefault property; set it again to true
@@ -360,15 +531,44 @@ public:
     }
 };
 
+#ifdef Q_OS_MACOS
+// The widget style requested with the -style option or with QT_STYLE_OVERRIDE
+Q_GLOBAL_STATIC(QString, requestedStyle)
+
+// Looks for a request for a widget style. This needs to be done before the arguments are
+// passed to Qt because Qt removes the -style option from the arguments.
+static int &lookForRequestedStyle(int &argc, char *argv[])
+{
+    QString style;
+    for (int i = 1; i < argc; ++i) {
+        if (!argv[i]) {
+            continue;
+        }
+        QByteArrayView arg{argv[i]};
+        if (arg.startsWith("--")) {
+            arg = arg.sliced(1);
+        }
+        if (arg.startsWith("-style=")) {
+            style = QString::fromLocal8Bit(arg.sliced(7));
+        } else if (arg == "-style" && i < argc - 1 && argv[i + 1]) {
+            style = QString::fromLocal8Bit(argv[++i]);
+        }
+    }
+    *requestedStyle = style.isEmpty() ? qEnvironmentVariable("QT_STYLE_OVERRIDE") : style;
+    return argc;
+}
+#endif
+
 KleopatraApplication::KleopatraApplication(int &argc, char *argv[])
+#ifdef Q_OS_MACOS
+    : QApplication(lookForRequestedStyle(argc, argv), argv)
+#else
     : QApplication(argc, argv)
+#endif
     , d(new Private(this))
 {
 #ifdef Q_OS_MACOS
-    // Use Breeze (or the style chosen by the user) instead of the native macOS style so that
-    // Kleopatra looks the same as on the other platforms
-    KStyleManager::initStyle();
-    wrapStyleInProxyStyle();
+    applyWidgetStyle();
 #else
     setStyle(new KleopatraProxyStyle);
 #endif
@@ -378,18 +578,70 @@ KleopatraApplication::KleopatraApplication(int &argc, char *argv[])
 }
 
 #ifdef Q_OS_MACOS
-void KleopatraApplication::wrapStyleInProxyStyle()
+void KleopatraApplication::applyWidgetStyle()
 {
-    // KStyleManager replaces the application style, so the proxy style has to be recreated
-    // with the newly chosen style as base
-    setStyle(new KleopatraProxyStyle{style()->name()});
+    // Use the style chosen by the user in the style menu. Unlike KStyleManager, which falls back
+    // to Breeze, fall back to the default style, i.e. to the native macOS style or to a style
+    // requested with the -style option or with QT_STYLE_OVERRIDE. Like for KStyleManager, a
+    // requested style takes precedence over the chosen style. Qt ignores requests for styles
+    // that don't exist.
+    QString chosenStyle;
+    if (requestedStyle->isEmpty() || !QStyleFactory::keys().contains(*requestedStyle, Qt::CaseInsensitive)) {
+        chosenStyle = KConfigGroup(KSharedConfig::openConfig(), u"KDE"_s).readEntry("widgetStyle", QString());
+        if (!QStyleFactory::keys().contains(chosenStyle, Qt::CaseInsensitive)) {
+            chosenStyle.clear();
+        }
+    }
+    auto style = chosenStyle.isEmpty() ? new KleopatraProxyStyle : new KleopatraProxyStyle{chosenStyle};
+    const bool nativeStyle = style->isMacStyle();
+    Kleo::MacOS::setNativeStyleActive(nativeStyle);
+    setStyle(style);
+
+    // menus of macOS applications don't show icons
+    if (testAttribute(Qt::AA_DontShowIconsInMenus) != nativeStyle) {
+        setAttribute(Qt::AA_DontShowIconsInMenus, nativeStyle);
+        // make existing menus update their items
+        const auto widgets = allWidgets();
+        for (auto widget : widgets) {
+            if (auto menu = qobject_cast<QMenu *>(widget)) {
+                const auto actions = menu->actions();
+                for (auto action : actions) {
+                    QActionEvent event{QEvent::ActionChanged, action};
+                    sendEvent(menu, &event);
+                }
+            }
+        }
+    }
+
+    Q_EMIT widgetStyleChanged();
 }
 
 QAction *KleopatraApplication::createConfigureStyleAction(QObject *parent)
 {
     auto action = KStyleManager::createConfigureAction(parent);
-    if (action->menu()) {
-        connect(action->menu(), &QMenu::triggered, this, &KleopatraApplication::wrapStyleInProxyStyle);
+    if (!action->menu()) {
+        // there is no style menu if a style was requested explicitly
+        return action;
+    }
+    const auto styleActions = action->menu()->actions();
+    if (auto group = styleActions.empty() ? nullptr : styleActions.front()->actionGroup()) {
+        // KStyleManager would apply the chosen style (or Breeze for "Default") without the proxy
+        // style. Therefore, Kleopatra takes over and stores and applies the chosen style itself.
+        disconnect(group, &QActionGroup::triggered, group, nullptr);
+        connect(group, &QActionGroup::triggered, this, [this](QAction *styleAction) {
+            const QString chosenStyle = styleAction->data().toString();
+            KConfigGroup config{KSharedConfig::openConfig(), u"KDE"_s};
+            if (chosenStyle.isEmpty()) {
+                config.deleteEntry("widgetStyle");
+            } else {
+                config.writeEntry("widgetStyle", chosenStyle);
+            }
+            config.sync();
+            applyWidgetStyle();
+        });
+    } else {
+        // KStyleManager has applied the chosen style without the proxy style
+        connect(action->menu(), &QMenu::triggered, this, &KleopatraApplication::applyWidgetStyle);
     }
     return action;
 }
@@ -762,6 +1014,15 @@ static void open_or_raise(QWidget *w)
     } else if (w->isVisible()) {
         qCDebug(KLEOPATRA_LOG) << __func__ << "raising window";
         w->raise();
+#elif defined(Q_OS_MACOS)
+    // KWindowSystem cannot activate windows on macOS
+    if (w->isVisible()) {
+        qCDebug(KLEOPATRA_LOG) << __func__ << "raising and activating window";
+        if (w->isMinimized()) {
+            w->setWindowState(w->windowState() & ~Qt::WindowMinimized);
+        }
+        w->raise();
+        w->activateWindow();
 #else
     if (w->isVisible()) {
         qCDebug(KLEOPATRA_LOG) << __func__ << "activating window";

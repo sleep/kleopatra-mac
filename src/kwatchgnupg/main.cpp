@@ -12,6 +12,7 @@
 
 #include "kwatchgnupg_debug.h"
 #include <KCrash>
+#include <KIconTheme>
 #include <KLocalizedString>
 #include <KWindowSystem>
 
@@ -22,6 +23,10 @@
 
 int main(int argc, char **argv)
 {
+    // Enforce the Breeze icon theme for all icons (including recoloring);
+    // needs to be done before creating the QApplication
+    KIconTheme::initTheme();
+
     QApplication app(argc, argv);
 
     KLocalizedString::setApplicationDomain(QByteArrayLiteral("kwatchgnupg"));

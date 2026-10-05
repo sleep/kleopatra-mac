@@ -27,6 +27,11 @@ if(WIN32)
 else()
   set(_kleopatra_extra_uiserver_SRCS uiserver/uiserver_unix.cpp)
   set(_kleopatra_extra_SRCS)
+  if(APPLE)
+    enable_language(OBJCXX)
+    set(_kleopatra_extra_SRCS macos/macosstyle.mm macos/macosstyle.h)
+    set_source_files_properties(macos/macosstyle.mm PROPERTIES SKIP_UNITY_BUILD_INCLUSION ON)
+  endif()
 endif()
 
 set(_kleopatra_uiserver_SRCS
@@ -604,6 +609,8 @@ endif()
 set(_kleopatra_platform_libs)
 if (WIN32)
   set(_kleopatra_platform_libs "secur32")
+elseif (APPLE)
+  set(_kleopatra_platform_libs "-framework AppKit")
 endif ()
 
 target_link_libraries(kleopatra_bin
@@ -647,4 +654,46 @@ install(
   DESTINATION ${KDE_INSTALL_DATADIR}/kio/servicemenus
 )
 
+if (APPLE AND EXISTS "${KLEOPATRA_ICON_DIR}/macos/256-apps-kleopatra.png")
+    # The logo for the About dialog. It's taken from the resources because the application
+    # has no window icon on macOS and the icon isn't in an icon theme in the app bundle.
+    set_source_files_properties("${KLEOPATRA_ICON_DIR}/macos/256-apps-kleopatra.png" PROPERTIES QT_RESOURCE_ALIAS "kleopatra.png")
+    qt_add_resources(kleopatra_bin "macos_app_logo" PREFIX "/icons/macos" FILES "${KLEOPATRA_ICON_DIR}/macos/256-apps-kleopatra.png")
+endif()
+
 install(FILES kleopatradebugcommandsrc DESTINATION ${KDE_INSTALL_CONFDIR})
+if (APPLE)
+    # On macOS, KConfig looks for config files only in the preferences folder of the user,
+    # so that the files with the default settings installed in KDE_INSTALL_CONFDIR are never
+    # found, in particular not in an app bundle. Therefore, they are compiled into the
+    # executable as resources below :/kconfig, where KConfig looks for defaults as well.
+    set(_default_config_files "${CMAKE_CURRENT_SOURCE_DIR}/kleopatradebugcommandsrc")
+    # libkleopatrarc is installed by Libkleo
+    get_filename_component(_libkleo_prefix "${KPim6Libkleo_DIR}/../../.." ABSOLUTE)
+    find_file(LIBKLEOPATRARC_FILE libkleopatrarc
+        PATHS "${_libkleo_prefix}/etc/xdg" "${KDE_INSTALL_FULL_CONFDIR}"
+        NO_DEFAULT_PATH
+    )
+    find_program(PERL_EXECUTABLE perl)
+    if (LIBKLEOPATRARC_FILE AND PERL_EXECUTABLE)
+        # use checksum tools that exist on all supported versions of macOS
+        set(_adapted_libkleopatrarc "${CMAKE_CURRENT_BINARY_DIR}/macos/libkleopatrarc")
+        add_custom_command(
+            OUTPUT "${_adapted_libkleopatrarc}"
+            COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/macos"
+            COMMAND "${PERL_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/macos/adapt-libkleopatrarc.pl" "${LIBKLEOPATRARC_FILE}" "${_adapted_libkleopatrarc}"
+            DEPENDS "${LIBKLEOPATRARC_FILE}" "${CMAKE_CURRENT_SOURCE_DIR}/macos/adapt-libkleopatrarc.pl"
+            VERBATIM
+        )
+        list(APPEND _default_config_files "${_adapted_libkleopatrarc}")
+    elseif (LIBKLEOPATRARC_FILE)
+        list(APPEND _default_config_files "${LIBKLEOPATRARC_FILE}")
+    else()
+        message(WARNING "libkleopatrarc of Libkleo not found. Kleopatra will lack the default archive, checksum and key filter definitions.")
+    endif()
+    foreach(_file ${_default_config_files})
+        get_filename_component(_name "${_file}" NAME)
+        set_source_files_properties("${_file}" PROPERTIES QT_RESOURCE_ALIAS "${_name}")
+    endforeach()
+    qt_add_resources(kleopatra_bin "macos_default_config" PREFIX "/kconfig" FILES ${_default_config_files})
+endif()

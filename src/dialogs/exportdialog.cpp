@@ -10,6 +10,7 @@
 #include "view/waitwidget.h"
 
 #include <QDialogButtonBox>
+#include <QFontDatabase>
 #include <QPushButton>
 #include <QTextEdit>
 #include <QVBoxLayout>
@@ -56,8 +57,7 @@ void ExportWidget::Private::setupUi()
     textEdit->setVisible(false);
     textEdit->setReadOnly(true);
 
-    auto fixedFont = QFont(QStringLiteral("Monospace"));
-    fixedFont.setStyleHint(QFont::TypeWriter);
+    const auto fixedFont = QFontDatabase::systemFont(QFontDatabase::FixedFont);
 
     textEdit->setFont(fixedFont);
     textEdit->setReadOnly(true);

@@ -62,6 +62,7 @@
 #include <QDir>
 #include <QElapsedTimer>
 #include <QEventLoop>
+#include <QIcon>
 #include <QMessageBox>
 #include <QSettings>
 #include <QThreadPool>
@@ -76,8 +77,10 @@
 #include <memory>
 
 #ifdef Q_OS_MACOS
+#include <QProcess>
 #include <climits>
 #include <cstdlib>
+#include <libproc.h>
 #include <mach-o/dyld.h>
 #include <string>
 #include <unistd.h>
@@ -166,6 +169,72 @@ static void useBundledGnuPG()
     const std::string newPath = (path && *path) ? binDir + ':' + path : binDir;
     setenv("PATH", newPath.c_str(), 1);
 }
+
+// Returns the path of the executable of the GnuPG daemon that listens on the socket in the
+// GnuPG home directory, or an empty string if no such daemon is running.
+static QString runningDaemonExecutable(const QString &binDir, const QStringList &daemonOption)
+{
+    QProcess process;
+    process.start(binDir + "/gpg-connect-agent"_L1, daemonOption + QStringList{u"--no-autostart"_s, u"getinfo pid"_s, u"/bye"_s});
+    if (!process.waitForFinished(3000)) {
+        return {};
+    }
+    // the reply is "D <pid>" followed by "OK"
+    const QByteArray reply = process.readAllStandardOutput();
+    if (!reply.startsWith("D ")) {
+        return {};
+    }
+    bool ok = false;
+    const int pid = reply.mid(2, reply.indexOf('\n') - 2).trimmed().toInt(&ok);
+    char path[PROC_PIDPATHINFO_MAXSIZE];
+    if (!ok || proc_pidpath(pid, path, sizeof(path)) <= 0) {
+        return {};
+    }
+    return QString::fromLocal8Bit(path);
+}
+
+// Stops the daemons of the bundled GnuPG when Kleopatra quits. Running daemons keep using
+// the location of the app bundle they were started from. Therefore, they would block ejecting
+// the disk image if Kleopatra was run from there, and they wouldn't find the pinentry and
+// their helper programs anymore after the app was moved or replaced by an update.
+// Daemons of another GnuPG installation, which GnuPG uses if they are already running,
+// are left alone.
+class BundledGnuPGDaemonsStopper
+{
+public:
+    ~BundledGnuPGDaemonsStopper()
+    {
+        const QString rootDir = qEnvironmentVariable("KLEOPATRA_GNUPG_ROOTDIR");
+        if (!mEnabled || rootDir.isEmpty()) {
+            return;
+        }
+        const QString binDir = rootDir + "/bin"_L1;
+        // scdaemon and tpm2daemon are stopped by gpg-agent
+        static const struct {
+            QString component;
+            QStringList connectOption;
+        } daemons[] = {
+            {u"gpg-agent"_s, {}},
+            {u"keyboxd"_s, {u"--keyboxd"_s}},
+            {u"dirmngr"_s, {u"--dirmngr"_s}},
+        };
+        for (const auto &daemon : daemons) {
+            if (runningDaemonExecutable(binDir, daemon.connectOption).startsWith(rootDir + u'/')) {
+                QProcess process;
+                process.start(binDir + "/gpgconf"_L1, {u"--kill"_s, daemon.component});
+                process.waitForFinished(3000);
+            }
+        }
+    }
+
+    void setEnabled(bool enabled)
+    {
+        mEnabled = enabled;
+    }
+
+private:
+    bool mEnabled = false;
+};
 #endif
 
 int main(int argc, char **argv)
@@ -200,6 +269,11 @@ int main(int argc, char **argv)
     // needs to be done before creating the QApplication
     KIconTheme::initTheme();
     STARTUP_TIMING << "Icon theme initialized";
+
+#ifdef Q_OS_MACOS
+    // created before the application, so that the daemons are stopped when nothing uses them anymore
+    BundledGnuPGDaemonsStopper daemonsStopper;
+#endif
 
     KleopatraApplication app(argc, argv);
     KLocalizedString::setApplicationDomain(QByteArrayLiteral("kleopatra"));
@@ -296,6 +370,11 @@ int main(int argc, char **argv)
         }
     }
 
+#ifdef Q_OS_MACOS
+    // an instance that only forwarded its arguments to the primary instance doesn't get here
+    daemonsStopper.setEnabled(true);
+#endif
+
     QAccessible::installFactory(Kleo::accessibleWidgetFactory);
     if (qEnvironmentVariableIntValue("KLEO_LOG_A11Y_EVENTS") != 0) {
         Kleo::installAccessibleEventLogger();
@@ -320,6 +399,10 @@ int main(int argc, char **argv)
     }
 
     AboutData aboutData;
+#ifdef Q_OS_MACOS
+    // the About dialog falls back to the window icon of the application, which isn't set on macOS
+    aboutData.setProgramLogo(QIcon{u":/icons/macos/kleopatra.png"_s});
+#endif
     KAboutData::setApplicationData(aboutData);
 
     KCrash::initialize();

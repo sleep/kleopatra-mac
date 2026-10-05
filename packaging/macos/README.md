@@ -100,6 +100,12 @@ root directory, so at startup Kleopatra sets `KLEOPATRA_GNUPG_ROOTDIR` to the bu
 `Contents` directory and puts `Contents/bin` first in `PATH`, where GpgME looks for
 `gpgconf` (see `src/main.cpp`).
 
+GnuPG's daemons (gpg-agent, keyboxd, dirmngr) keep using the location of the bundle
+they were started from. So that they don't block ejecting the disk image and don't
+miss pinentry after the app was moved or updated, Kleopatra stops the daemons of the
+bundled GnuPG when it quits. Daemons of another GnuPG installation that were already
+running are left alone.
+
 The app in `~/CraftRoot/Applications/KDE/` (not packaged) has no GnuPG in the bundle,
 so the symlinks dangle and Kleopatra uses the GnuPG found in `PATH`, for example from
 Homebrew.

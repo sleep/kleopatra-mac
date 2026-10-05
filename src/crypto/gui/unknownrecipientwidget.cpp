@@ -8,6 +8,7 @@
 #include "unknownrecipientwidget.h"
 
 #include <QFont>
+#include <QFontDatabase>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
@@ -27,7 +28,7 @@ UnknownRecipientWidget::UnknownRecipientWidget(const char *keyid, QWidget *paren
     mKeyID = QString::fromLatin1(keyid);
 
     auto keyIdLabel = new QLabel(mKeyID);
-    keyIdLabel->setFont(QFont(QStringLiteral("Monospace")));
+    keyIdLabel->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
 
     auto lookUpBtn = new QPushButton(i18nc("@action:button", "Search"));
 

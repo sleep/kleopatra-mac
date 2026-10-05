@@ -11,6 +11,8 @@
 
 #include "searchbar.h"
 
+#include <utils/gui-helper.h>
+
 #include <Libkleo/Algorithm>
 #include <Libkleo/KeyCache>
 #include <Libkleo/KeyFilter>
@@ -119,6 +121,7 @@ private:
     QComboBox *combo;
     QPushButton *certifyButton;
     int comboSavedIndex = -1;
+    bool compactLayout = false;
 };
 
 SearchBar::Private::Private(SearchBar *qq)
@@ -133,6 +136,12 @@ SearchBar::Private::Private(SearchBar *qq)
     lineEdit->setToolTip(i18nc("@info:tooltip", "Show only certificates that match the entered search term."));
     layout->addWidget(lineEdit, /*stretch=*/1);
     combo = new QComboBox(q);
+#ifdef Q_OS_MACOS
+    // the category filter doesn't adapt to the longest category name, so that the search bar
+    // also fits in a toolbar
+    combo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    combo->setMinimumContentsLength(6);
+#endif
     combo->setAccessibleName(i18n("Filter certificates by category"));
     combo->setToolTip(i18nc("@info:tooltip", "Show only certificates that belong to the selected category."));
     layout->addWidget(combo);
@@ -202,7 +211,13 @@ SearchBar::~SearchBar()
 
 void SearchBar::updateClickMessage(const QString &shortcutStr)
 {
+#ifdef Q_OS_MACOS
+    // search fields on macOS show a short placeholder; the shortcut is mentioned in the tooltip
+    d->lineEdit->setPlaceholderText(i18nc("@info:placeholder", "Search"));
+    d->lineEdit->setToolTip(i18nc("@info:tooltip", "Show only certificates that match the entered search term (%1).", shortcutStr));
+#else
     d->lineEdit->setPlaceholderText(i18nc("@info:placeholder", "Enter search term <%1>", shortcutStr));
+#endif
 }
 
 // slot
@@ -237,6 +252,51 @@ void SearchBar::setChangeStringFilterEnabled(bool on)
 void SearchBar::setChangeKeyFilterEnabled(bool on)
 {
     d->combo->setEnabled(on);
+}
+
+void SearchBar::setCompactLayout(bool compact)
+{
+    if (compact == d->compactLayout) {
+        return;
+    }
+    d->compactLayout = compact;
+    auto boxLayout = static_cast<QHBoxLayout *>(layout());
+    boxLayout->removeWidget(d->lineEdit);
+    if (compact) {
+        // the leading stretch keeps the widgets at the trailing edge; because of the stretch
+        // factors it only gets the space that is left when the search field has its maximum width
+        boxLayout->insertStretch(0, 1);
+        boxLayout->addWidget(d->lineEdit, 1000);
+        // ignoring the size hint keeps the width of the search field independent of its content
+        // (the size hint changes when the clear button is shown)
+        d->lineEdit->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+        d->lineEdit->setMinimumWidth(110);
+        d->lineEdit->setMaximumWidth(200);
+    } else {
+        delete boxLayout->takeAt(0);
+        boxLayout->insertWidget(0, d->lineEdit, /*stretch=*/1);
+        d->lineEdit->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        d->lineEdit->setMinimumWidth(0);
+        d->lineEdit->setMaximumWidth(QWIDGETSIZE_MAX);
+    }
+}
+
+void SearchBar::setTabOrderAfter(QWidget *widget)
+{
+    QWidget *previous = widget;
+    const auto setNext = [&previous](QWidget *next) {
+        forceSetTabOrder(previous, next);
+        previous = next;
+    };
+    if (d->compactLayout) {
+        setNext(d->combo);
+        setNext(d->certifyButton);
+        setNext(d->lineEdit);
+    } else {
+        setNext(d->lineEdit);
+        setNext(d->combo);
+        setNext(d->certifyButton);
+    }
 }
 
 QLineEdit *SearchBar::lineEdit() const

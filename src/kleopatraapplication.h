@@ -123,10 +123,14 @@ public Q_SLOTS:
 Q_SIGNALS:
     void configurationChanged();
     void distributionDataChanged();
+#ifdef Q_OS_MACOS
+    // Emitted after the widget style was applied
+    void widgetStyleChanged();
+#endif
 
 private Q_SLOTS:
 #ifdef Q_OS_MACOS
-    void wrapStyleInProxyStyle();
+    void applyWidgetStyle();
 #endif
     // used as URL handler for URLs with schemes that shall be blocked
     void blockUrl(const QUrl &url);
